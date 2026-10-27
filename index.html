@@ -560,8 +560,35 @@ const refs = {};
 
 /* ---------------- utilidades de negocio ---------------- */
 const prod = id => S.productos.find(p => p.id === id);
-const fotoDe = p => p ? (S.fotos?.[p.id] ? {src: S.fotos[p.id], real: true} : FOTOS[p.icon] ? {src: FOTOS[p.icon], real: false} : null) : null;
-const fotoHTML = (p, cls = 'tile-img') => { const f = fotoDe(p); return f ? `<span class="${cls} ${f.real ? 'real' : ''}"><img src="${f.src}" alt="" loading="lazy" decoding="async"></span>` : ico(p.icon); };
+// Fotos reales de internet (Unsplash, licencia gratuita) SOLO para la versión de prueba.
+// Prioridad: foto propia subida > foto de internet > ilustración. Si no hay internet, cae a la ilustración.
+const UNSPLASH = id => `https://images.unsplash.com/photo-${id}?w=480&h=360&q=70&auto=format&fit=crop`;
+const FOTOS_WEB = {
+  queso: UNSPLASH('1593504049359-74330189a345'),
+  pepperoni: UNSPLASH('1542282811-943ef1a977c3'),
+  margarita: UNSPLASH('1594007654729-407eedc4be65'),
+  vegetariana: UNSPLASH('1559160582-eab6966b680f'),
+  hawaiana: UNSPLASH('1565299624946-b28f40a0ae38'),
+  carnes: UNSPLASH('1534308983496-4fabb1a015ee'),
+  suprema: UNSPLASH('1513104890138-7c749659a591'),
+  pollo: UNSPLASH('1574071318508-1cdbab80d002'),
+  hongos: UNSPLASH('1571997478779-2adcbbe9ab2f'),
+  especial: UNSPLASH('1579751626657-72bc17010498'),
+  alitas: UNSPLASH('1567620832903-9fc6debc209f'),
+  agua: UNSPLASH('1561041695-d2fadf9f318c')
+};
+const fotoDe = p => {
+  if (!p) return null;
+  const ilus = FOTOS[p.icon] || '';
+  if (S.fotos?.[p.id]) return {src: S.fotos[p.id], real: true, fb: ilus};
+  if (FOTOS_WEB[p.icon]) return {src: FOTOS_WEB[p.icon], real: true, fb: ilus};
+  return ilus ? {src: ilus, real: false, fb: ''} : null;
+};
+function fotoFallo(img) {
+  const fb = img.dataset.fb; img.onerror = null;
+  if (fb) { img.src = fb; img.parentElement.classList.remove('real'); } else img.parentElement.style.visibility = 'hidden';
+}
+const fotoHTML = (p, cls = 'tile-img') => { const f = fotoDe(p); return f ? `<span class="${cls} ${f.real ? 'real' : ''}"><img src="${f.src}" data-fb="${f.fb}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="fotoFallo(this)"></span>` : ico(p.icon); };
 const priceOf = (p, sz) => +((p.precios || {})[sz] ?? 0);
 const recipeOf = (p, sz) => (p.receta || {})[sz] || {};
 function consumoOf(items) {
