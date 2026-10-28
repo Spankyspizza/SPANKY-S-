@@ -1,17 +1,32 @@
 {
-  "name": "RIO'S PIZZA",
-  "short_name": "RIO'S PIZZA",
-  "description": "Punto de venta, cocina e inventario de RIO'S PIZZA",
+  "name": "SPANKY'S",
+  "short_name": "SPANKY'S",
+  "description": "Punto de venta, cocina e inventario de Spanky's",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#E9EBE8",
-  "theme_color": "#1B1E1D",
+  "background_color": "#FDFBFE",
+  "theme_color": "#2A0047",
   "lang": "es",
   "icons": [
-    {"src": "icon192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-    {"src": "icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-    {"src": "icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    {
+      "src": "icon192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
