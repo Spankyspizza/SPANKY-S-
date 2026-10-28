@@ -1650,6 +1650,9 @@ function viewAjustes() {
         <label class="field"><span>Pie del comprobante</span><input class="inp" id="ajPie" value="${esc(n.pie)}"></label></div></div>
       <div class="sect" style="margin:0" id="ajSuc"></div>
       <div class="sect" style="margin:0" id="ajUsr"></div>
+      <div class="sect" style="margin:0"><h3>Traer datos del sistema anterior</h3>
+        <p class="note" style="margin:0">Copia a este sistema el menú, las recetas, las fotos, el inventario y, si quiere, las ventas de prueba del sistema anterior (el que se usaba con el usuario riospizza@gmail.com). El sistema anterior no se modifica.</p>
+        <button class="ghost sm" data-act="importar" style="justify-self:start">Traer datos del sistema anterior</button></div>
       <div class="sect" style="margin:0"><h3>Facturación</h3><div class="grid2">
         <label class="field"><span>Símbolo de moneda</span><input class="inp mono" id="ajMon" value="${esc(n.moneda || '₡')}" maxlength="4"></label>
         <label class="field"><span>IVA incluido en precios (%)</span><input class="inp num" id="ajIva" inputmode="decimal" value="${n.iva}"></label>
@@ -1734,6 +1737,89 @@ async function ajSave() {
     await refs.neg.set({...S.neg, ...data});
     toast('Ajustes guardados.');
   } catch (e) { toast('No se pudieron guardar los ajustes.'); }
+}
+
+
+/* ---------------- IMPORTAR DEL SISTEMA ANTERIOR (proyecto Firebase viejo) ---------------- */
+const OLD_CFG = {apiKey: "AIzaSyBJPsEUFJGSlE0I0yDsk_jH-askQlvFlj8", authDomain: "rio-s-pizza-92bdf.firebaseapp.com", projectId: "rio-s-pizza-92bdf", storageBucket: "rio-s-pizza-92bdf.firebasestorage.app", messagingSenderId: "755653490298", appId: "1:755653490298:web:92c345632c1cd57661adc3"};
+async function importarAnterior() {
+  if (!esDueno()) return;
+  const res = await dialog(`<h2>Traer datos del sistema anterior<small>Se copian a la sucursal ${esc(sucAct().nombre)} · el sistema anterior no se modifica</small></h2>
+    <div class="grid2">
+      <label class="field"><span>Correo del sistema anterior</span><input class="inp mono" id="imU" value="riospizza@gmail.com" autocapitalize="none" spellcheck="false"></label>
+      <label class="field"><span>Contraseña del sistema anterior</span><input class="inp mono" id="imP" type="password" autocomplete="off"></label>
+    </div>
+    <div style="display:grid;gap:6px">
+      <label class="check"><input type="checkbox" id="imMenu" checked><span>Menú, precios y recetas</span></label>
+      <label class="check"><input type="checkbox" id="imFotos" checked><span>Fotos de productos</span></label>
+      <label class="check"><input type="checkbox" id="imInv" checked><span>Ingredientes e inventario</span></label>
+      <label class="check"><input type="checkbox" id="imNeg" checked><span>Datos del negocio, IVA, PIN y factores de receta</span></label>
+      <label class="check"><input type="checkbox" id="imHist"><span>Ventas, anulaciones y movimientos de inventario (historial de pruebas)</span></label>
+    </div>
+    <p class="note" style="margin:0">Lo que marque <b>reemplaza</b> lo que haya ahora en este sistema. La contraseña se usa solo en este momento y no se guarda.</p>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Traer datos</button></div>`, '',
+    () => {
+      const u = $('#imU').value.trim(), pw = $('#imP').value;
+      if (!u || !pw) { toast('Escriba el correo y la contraseña del sistema anterior.'); return false; }
+      const o = {menu: $('#imMenu').checked, fotos: $('#imFotos').checked, inv: $('#imInv').checked, neg: $('#imNeg').checked, hist: $('#imHist').checked};
+      if (!Object.values(o).some(Boolean)) { toast('Marque al menos una opción.'); return false; }
+      return {u, pw, o};
+    });
+  if (!res) return;
+  const sinRios = v => typeof v === 'string' ? v.replace(/RIO.?S PIZZA/gi, "SPANKY'S") : v;
+  const hecho = [];
+  let app2;
+  try {
+    toast('Conectando con el sistema anterior…');
+    app2 = firebase.apps.find(a => a.name === 'anterior') || firebase.initializeApp(OLD_CFG, 'anterior');
+    try { await app2.auth().setPersistence(firebase.auth.Auth.Persistence.NONE); } catch {}
+    await app2.auth().signInWithEmailAndPassword(res.u, res.pw);
+    const ofs = app2.firestore();
+    if (res.o.menu) {
+      const m = await ofs.doc('config/menu').get();
+      if (m.exists) { await refs.menu.set(m.data()); hecho.push(`${(m.data().productos || []).length} productos`); }
+    }
+    if (res.o.fotos) {
+      const f = await ofs.collection('fotos').get();
+      for (const d of f.docs) await S.db.doc('fotos/' + d.id).set(d.data());
+      if (f.docs.length) hecho.push(`${f.docs.length} fotos`);
+    }
+    if (res.o.inv) {
+      const i = await ofs.doc('config/inventario').get();
+      if (i.exists) {
+        const data = i.data(); await withLock(refs.inv, () => refs.inv.set(data));
+        await enOtrasSucursales(items => { let c = false; for (const [k, v] of Object.entries(data.items || {})) if (!items[k]) { items[k] = {...v, stock: 0}; c = true; } return c ? undefined : false; });
+        hecho.push(`${Object.keys(data.items || {}).length} ingredientes`);
+      }
+    }
+    if (res.o.neg) {
+      const n = await ofs.doc('config/negocio').get();
+      if (n.exists) {
+        const d = n.data();
+        await refs.neg.set({...NEG_DEF, ...S.neg, iva: d.iva ?? S.neg.iva, pin: d.pin || S.neg.pin, moneda: d.moneda || S.neg.moneda, mult: d.mult || S.neg.mult, pie: d.pie || S.neg.pie,
+          nit: d.nit || S.neg.nit, direccion: d.direccion || S.neg.direccion, telefono: d.telefono || S.neg.telefono, nombre: sinRios(d.nombre) || "SPANKY'S"});
+        if (d.serie && d.serie !== sucAct().serie) await withLock(refs.suc, async () => { const g = await refs.suc.get(); const l = clone(g.exists ? g.data().lista || [SUC_DEF] : [SUC_DEF]); const k = l.findIndex(x => x.id === S.suc); if (k >= 0 && !l.some(x => x.serie === d.serie)) { l[k].serie = d.serie; await refs.suc.set({lista: l}); } });
+        hecho.push('datos del negocio');
+      }
+    }
+    if (res.o.hist) {
+      const f = await ofs.collection('facturas').orderBy('ts', 'desc').limit(3000).get();
+      for (const d of f.docs) {
+        const x = d.data(); if (x.negocio) x.negocio.nombre = sinRios(x.negocio.nombre);
+        await S.db.doc(sp('facturas/' + d.id)).set({...x, sucursal: S.suc, sucursalNombre: sucAct().nombre, importada: true});
+      }
+      const mv = await ofs.collection('movimientos').orderBy('ts', 'desc').limit(3000).get();
+      for (const d of mv.docs) await S.db.doc(sp('movimientos/' + d.id)).set(d.data());
+      const c = await ofs.doc('config/contador').get();
+      if (c.exists && (c.data().next || 1) > S.next) await withLock(refs.inv, () => refs.cnt.set({next: c.data().next}));
+      hecho.push(`${f.docs.length} ventas y ${mv.docs.length} movimientos`);
+    }
+    toast(hecho.length ? 'Listo. Se trajeron: ' + hecho.join(', ') + '.' : 'El sistema anterior no tenía datos para traer.');
+  } catch (e) {
+    console.warn(e);
+    toast(e && /auth\/(invalid|wrong|user-not-found)/.test(e.code || '') ? 'El correo o la contraseña del sistema anterior no son correctos.' : e && e.code === 'permission-denied' ? 'Firebase no permitió leer o guardar los datos.' : 'No se pudieron traer los datos. Revise el internet e intente de nuevo.');
+  }
+  try { await app2?.auth().signOut(); } catch {}
 }
 
 /* ---------------- SUCURSALES Y USUARIOS (solo dueño) ---------------- */
@@ -1985,6 +2071,7 @@ const ACT = {
   sucNew: () => sucEdit(null),
   sucEdit: t => sucEdit(t.dataset.id),
   usrNew: () => usrEdit(null),
+  importar: () => importarAnterior(),
   usrEdit: t => usrEdit(t.dataset.id),
   logout: async () => { if (await confirmBox('Cerrar sesión', 'Para volver a entrar necesitará el usuario y la contraseña.', 'Cerrar sesión')) firebase.auth().signOut(); },
   cfgSave: () => { const c = parseConfig($('#cfgT').value); if (!c) { $('#cfgE').textContent = 'No encontré apiKey y projectId en lo que pegó. Copie el bloque completo.'; return; } ls.set('fbconfig', c); location.reload(); },
