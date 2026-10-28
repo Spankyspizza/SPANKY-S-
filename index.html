@@ -418,6 +418,13 @@ th{color:var(--brand)}
 .me-av{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--yellow);color:var(--brand-dark);font:800 13px var(--f-ui)}
 .me-suc{font-size:10px;line-height:1.15;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.8)}
 @media (max-width:760px){.rail .nav.me{display:flex}.me-av{width:26px;height:26px;font-size:11px}}
+.cajachip{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:13px;text-align:left}
+.cajachip .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);flex:none}.cajachip.ok .dot{background:var(--ok,#00C48C)}
+.cajachip span{color:var(--mute)}.cajachip i{margin-left:auto;font-style:normal;font-weight:700;color:var(--brand)}
+.cajachip.off{border-color:var(--orange);background:#FFF3E6}
+.cajabox{display:grid;gap:3px;padding:12px 14px;border-radius:10px;border:1px solid var(--line)}.cajabox.ok{background:#E9FBF4;border-color:#9BE5C9}.cajabox.off{background:#FFF3E6;border-color:#FFC58F}
+.cajabox span{font-size:13px;color:var(--mute)}
+.cajaacts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cajaacts button{min-height:48px}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -501,7 +508,7 @@ const ROLES = {
   caja: {l: 'Caja', d: 'Venta, cocina y facturas de su sucursal', vistas: ['venta', 'cocina', 'facturas']},
   cocina: {l: 'Cocina', d: 'Solo la pantalla de comandas', vistas: ['cocina']}
 };
-const SUC_DEF = {id: '001', nombre: 'Principal', serie: 'A', direccion: '', telefono: '', activa: true};
+const SUC_DEF = {id: '001', nombre: 'Principal', serie: 'A', cajas: 2, direccion: '', telefono: '', activa: true};
 const FE_ESTADO = {pendiente: ['Pendiente', 'warn'], enviado: ['Enviado', 'warn'], procesando: ['En proceso', 'warn'], recibido: ['En proceso', 'warn'], aceptado: ['Aceptado', 'ok'], rechazado: ['Rechazado', 'bad'], error: ['Error', 'bad']};
 const FE_TIPO = {'01': 'Factura electrónica', '03': 'Nota de crédito electrónica', '04': 'Tiquete electrónico'};
 const PROVINCIAS = [['1', 'San José'], ['2', 'Alajuela'], ['3', 'Cartago'], ['4', 'Heredia'], ['5', 'Guanacaste'], ['6', 'Puntarenas'], ['7', 'Limón']];
@@ -577,7 +584,8 @@ const S = {
   iq: '', ifil: 'todos', mcat: 'todos',
   rep: {tab: 'ventas', suc: '*', per: 'hoy', from: dstr(new Date()), to: dstr(new Date()), data: null, loading: false},
   unlockAjustes: false, mres: null,
-  me: null, uid: '', suc: ls.get('suc', '001'), sucursales: [SUC_DEF], usuarios: []
+  me: null, uid: '', suc: ls.get('suc', '001'), sucursales: [SUC_DEF], usuarios: [],
+  turnosAb: [], puesto: ''
 };
 // Rutas por sucursal
 const sp = (p, s = S.suc) => `sucursales/${s}/${p}`;
@@ -586,6 +594,10 @@ const sucAct = () => sucOf(S.suc);
 const esDueno = () => S.me?.rol === 'dueno';
 const esSuper = () => S.me?.rol === 'dueno' || S.me?.rol === 'admin';
 const puedeVer = v => !S.me || (ROLES[S.me.rol]?.vistas || []).includes(v);
+// Cajas (puestos de cobro) de la sucursal y turno abierto en este equipo
+const cajasDe = (su = sucAct()) => Array.from({length: Math.max(1, Math.min(9, +su.cajas || 2))}, (_, i) => String(i + 1));
+const cajaNom = n => 'Caja ' + n;
+const turnoAct = () => S.turnosAb.find(t => t.caja === S.puesto) || null;
 const main = $('#main');
 const refs = {};
 
@@ -812,6 +824,8 @@ function subSuc() {
   const ok = f => typeof f === 'function' && UNSUB.push(f);
   ok(refs.inv.onSnapshot(s => { S.inv = s.exists ? clone(s.data().items || {}) : {}; S.loaded.inv = true; refresh('inv'); }, onErr));
   ok(refs.cnt.onSnapshot(s => { S.next = s.exists ? (s.data().next || 1) : 1; refresh('cnt'); }, onErr));
+  S.puesto = ls.get('puesto.' + S.suc, ''); S.turnosAb = [];
+  if (S.me?.rol !== 'cocina') ok(db.collection(sp('turnos')).where('estado', '==', 'abierto').onSnapshot(s => { S.turnosAb = s.docs.map(d => d.data()); refresh('caja'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('facturas')).orderBy('ts', 'desc').limit(300).onSnapshot(s => { S.facturas = s.docs.map(d => d.data()); S.loaded.fact = true; refresh('fact'); }, onErr));
   ok(db.collection(sp('comandas')).where('estado', 'in', ['pendiente', 'horno', 'lista']).limit(200).onSnapshot(s => {
     const prev = new Set(S.comandas.filter(c => c.estado === 'pendiente').map(c => c.numero));
@@ -849,7 +863,7 @@ function refresh(kind) {
   S.ready = S.offline || (S.loaded.menu && S.loaded.inv);
   renderRail();
   const v = S.view;
-  if (v === 'venta') { if (kind === 'com' || kind === 'fact') return; renderSizes(); renderGrid(); if (kind === 'neg' || kind === 'cnt' || kind === 'all' || kind === 'menu') renderTicket(); }
+  if (v === 'venta') { if (kind === 'com' || (kind === 'fact' && !S.cajaSheet)) return; if (kind === 'caja' || kind === 'fact') { renderTicket(); if (S.cajaSheet) cajaMenu(true); return; } renderSizes(); renderGrid(); if (kind === 'neg' || kind === 'cnt' || kind === 'all' || kind === 'menu') renderTicket(); }
   else if (v === 'cocina') renderCocina();
   else if (v === 'facturas') { renderFList(); renderFDet(); }
   else if (v === 'ajustes' && kind === 'fe' && !S.feCfgShown) { S.feCfgShown = true; viewAjustes(); }
@@ -934,6 +948,7 @@ function renderTicket() {
     <div class="tk-top">
       <div class="row"><div><div class="lbl">Comanda</div><div class="tk-num">${esc(sucAct().serie || 'A')}-${pad(S.next)}</div></div>
         <div class="tk-who"><b>${esc(caj)}</b><small>${esc(sucAct().nombre)}</small></div></div>
+      ${(() => { const tu = turnoAct(); return `<button class="cajachip ${tu ? 'ok' : 'off'}" data-act="cajaMenu"><span class="dot"></span><b>${S.puesto ? cajaNom(S.puesto) : 'Elegir caja'}</b><span>${tu ? 'Abierta · ' + ftime(tu.ts) : 'Cerrada'}</span><i>Caja ›</i></button>`; })()}
       <div class="seg sm" role="group" aria-label="Tipo de orden">${TIPOS.map(([k, l]) => `<button data-act="tipo" data-v="${k}" aria-pressed="${S.tipo === k}">${l}</button>`).join('')}</div>
     </div>
     <div class="tk-lines" id="tkLines">${lines}</div>
@@ -966,7 +981,7 @@ function updateTotals() {
     q.innerHTML = `<button data-act="rec" data-v="">Exacto</button>` + (total > 0 ? opts.map(v => `<button data-act="rec" data-v="${v}">${money0(v)}</button>`).join('') : '');
   }
   const b = $('#tkGo');
-  if (b) { b.textContent = S.busy ? 'Registrando…' : S.cart.length ? `Cobrar ${money(total)}` : 'Cobrar'; b.disabled = !S.cart.length || S.busy || S.offline; }
+  if (b) { const ab = !!turnoAct(); b.textContent = S.busy ? 'Registrando…' : !ab ? 'Abrir caja para cobrar' : S.cart.length ? `Cobrar ${money(total)}` : 'Cobrar'; b.disabled = (ab && !S.cart.length) || S.busy || S.offline; }
   const m = $('#mbar');
   if (m) { const n = S.cart.reduce((a, i) => a + i.qty, 0); m.innerHTML = n ? `<button class="primary" data-act="toTicket">Ver comanda · ${n} · ${money(total)}</button>` : ''; }
 }
@@ -1009,7 +1024,10 @@ function cycleSize(key) {
 }
 
 async function cobrar() {
-  if (!S.cart.length || S.busy || S.offline) return;
+  if (S.busy || S.offline) return;
+  if (!turnoAct()) { cajaMenu(); return; }
+  if (!S.cart.length) return;
+  const turno = turnoAct();
   const total = cartTotal();
   const rec = S.pago === 'efectivo' ? (S.recibido === '' ? total : parseFloat(S.recibido) || 0) : total;
   if (S.pago === 'efectivo' && rec < total - 0.001) return toast('El efectivo recibido no cubre el total.');
@@ -1041,7 +1059,7 @@ async function cobrar() {
       const now = Date.now();
       const fac = {
         numero, serie, n, ts: now, fecha: new Date(now).toISOString(), cajero: caj, usuario: S.me?.usuario || '', uid: S.uid, tipo: S.tipo,
-        sucursal: suc.id, sucursalNombre: suc.nombre,
+        sucursal: suc.id, sucursalNombre: suc.nombre, caja: turno.caja, turno: turno.id,
         cliente: {nit, nombre, correo},
         items: S.cart.map(it => ({id: it.id, nombre: it.nombre, size: it.size, precio: it.precio, qty: it.qty, total: r2(it.precio * it.qty), nota: it.nota || '', cabys: prod(it.id)?.cabys || ''})),
         total, subtotal: sub, iva, ivaPct: +S.neg.iva || 0, pago: S.pago, recibido: r2(rec), cambio: S.pago === 'efectivo' ? r2(rec - total) : 0,
@@ -1066,6 +1084,145 @@ async function cobrar() {
     console.warn(e); S.busy = false; updateTotals();
     toast(e && e.code === 'busy' ? e.message : e && e.code === 'quota_exceeded' ? 'La base de datos está llena. Exporte y depure facturas antiguas.' : 'No se pudo registrar la venta. Revise la conexión e intente de nuevo.');
   }
+}
+
+
+/* ---------------- CAJAS: apertura, entradas/salidas, arqueo y cierre ----------------
+   Datos: sucursales/<suc>/turnos/<id> = un turno de una caja (puesto) desde que se abre hasta que se cierra.
+   { id, caja:'1', cajaNombre, sucursal, estado:'abierto'|'cerrado', ts (apertura), fondo, abre:{por,usuario,uid},
+     movs:[{tipo:'entrada'|'salida',monto,motivo,ts,por}], arqueos:[{ts,por,contado,esperado,dif}], cierre:{…} }
+   Cada factura guarda caja y turno. Cierre ciego: el cajero cuenta sin ver el esperado; confirma un supervisor con PIN. */
+const refCajas = () => S.db.doc(sp('datos/cajas'));
+const sumM = (t, k) => r2((t.movs || []).filter(m => m.tipo === k).reduce((a, m) => a + (+m.monto || 0), 0));
+function resumenTurno(t, facs) {
+  const em = facs.filter(f => f.estado === 'emitida'), an = facs.filter(f => f.estado === 'anulada');
+  const by = k => r2(em.filter(f => f.pago === k).reduce((a, f) => a + f.total, 0));
+  const efectivo = by('efectivo'), entradas = sumM(t, 'entrada'), salidas = sumM(t, 'salida');
+  return {n: em.length, total: r2(em.reduce((a, f) => a + f.total, 0)), efectivo, tarjeta: by('tarjeta'), transferencia: by('transferencia'),
+    anuladas: an.length, montoAnulado: r2(an.reduce((a, f) => a + f.total, 0)), entradas, salidas, esperado: r2((+t.fondo || 0) + efectivo + entradas - salidas)};
+}
+async function calcTurno(t) {
+  const q = await S.db.collection(sp('facturas')).where('turno', '==', t.id).get();
+  return resumenTurno(t, q.docs.map(d => d.data()));
+}
+function elegirPuesto() {
+  S.cajaSheet = false;
+  const cs = cajasDe();
+  openModal(`<div class="sheet" style="max-width:440px" role="dialog" aria-modal="true"><h2>¿Qué caja es este equipo?<small>${esc(sucAct().nombre)} · se configura una sola vez en cada tablet</small></h2>
+    <div style="display:grid;gap:8px">${cs.map(n => { const t = S.turnosAb.find(x => x.caja === n); return `<button class="${S.puesto === n ? 'primary' : 'ghost'}" data-act="puestoSet" data-v="${n}" style="display:flex;justify-content:space-between"><span>${cajaNom(n)}</span><span class="note" style="color:inherit">${t ? 'abierta por ' + esc(t.abre?.por || '') : 'cerrada'}</span></button>`; }).join('')}</div>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button></div></div>`);
+}
+function puestoSet(n) { S.puesto = n; ls.set('puesto.' + S.suc, n); closeModal(); renderTicket(); updateTotals(); cajaMenu(); }
+function cajaMenu() {
+  if (!S.db) return;
+  if (!S.puesto) return elegirPuesto();
+  const t = turnoAct(); const sup = esSuper();
+  let body;
+  if (!t) {
+    const sug = ls.get('fondo.' + S.suc + '.' + S.puesto, '');
+    body = `<div class="cajabox off"><b>Caja cerrada</b><span>Para cobrar hay que abrir la caja y registrar el fondo con que se inicia.</span></div>
+      <label class="field"><span>Fondo inicial en efectivo (${esc(sym())})</span><input class="inp num" id="cjFondo" inputmode="decimal" style="font-size:20px;height:52px" value="${esc(sug)}" placeholder="Ej. 30000"></label>
+      <div class="row-actions"><button class="ghost left" data-act="puestoElegir">Cambiar de caja</button><button class="ghost" data-act="m-cancel">Cerrar</button><button class="primary" data-act="cajaAbrir">Abrir ${cajaNom(S.puesto)}</button></div>`;
+  } else {
+    const facs = S.facturas.filter(f => f.turno === t.id); const R = resumenTurno(t, facs);
+    body = `<div class="cajabox ok"><b>Abierta desde las ${ftime(t.ts)}</b><span>Abrió ${esc(t.abre?.por || '')} · fondo ${money(t.fondo)} · ${R.n} venta${R.n === 1 ? '' : 's'}${(t.arqueos || []).length ? ' · ' + t.arqueos.length + ' arqueo' + (t.arqueos.length > 1 ? 's' : '') : ''}</span></div>
+      ${sup ? `<dl class="tot" style="margin:0"><dt>Ventas en efectivo</dt><dd>${money(R.efectivo)}</dd><dt>Entradas</dt><dd>${money(R.entradas)}</dd><dt>Salidas</dt><dd>−${money(R.salidas)}</dd><dt class="big">Efectivo esperado</dt><dd class="big">${money(R.esperado)}</dd><dt>Tarjeta</dt><dd>${money(R.tarjeta)}</dd><dt>Transferencia</dt><dd>${money(R.transferencia)}</dd></dl><p class="note" style="margin:0">Solo dueño y encargado ven estos montos. El cierre exacto se calcula al cerrar.</p>` : ''}
+      ${(t.movs || []).length ? `<div class="field"><span>Entradas y salidas de efectivo</span><div class="tbl"><table><tbody>${t.movs.map(m => `<tr><td class="mono">${ftime(m.ts)}</td><td>${m.tipo === 'entrada' ? 'Entrada' : 'Salida'}</td><td>${esc(m.motivo)}</td><td class="n ${m.tipo === 'salida' ? 'bad' : ''}">${m.tipo === 'salida' ? '−' : ''}${money(m.monto)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      <div class="cajaacts"><button class="ghost" data-act="cajaMov" data-v="entrada">+ Entrada de efectivo</button><button class="ghost" data-act="cajaMov" data-v="salida">− Salida de efectivo</button><button class="ghost" data-act="cajaArqueo">Arqueo</button><button class="danger" data-act="cajaCerrar">Cerrar caja</button></div>
+      <div class="row-actions"><button class="ghost left" data-act="puestoElegir">Cambiar de caja</button><button class="ghost" data-act="m-cancel">Listo</button></div>`;
+  }
+  const otras = S.turnosAb.filter(x => x.caja !== S.puesto);
+  openModal(`<div class="sheet" style="max-width:520px" role="dialog" aria-modal="true"><h2>${cajaNom(S.puesto)}<small>${esc(sucAct().nombre)}${otras.length ? ' · también abierta: ' + otras.map(x => cajaNom(x.caja) + ' (' + esc(x.abre?.por || '') + ')').join(', ') : ''}</small></h2>${body}</div>`);
+  S.cajaSheet = true;
+}
+async function cajaAbrir() {
+  const fondo = parseFloat(($('#cjFondo')?.value || '').replace(',', '.'));
+  if (!(fondo >= 0)) { toast('Escriba el fondo inicial (0 si no hay).'); return; }
+  const caja = S.puesto;
+  try {
+    await withLock(refCajas(), async () => {
+      const q = await S.db.collection(sp('turnos')).where('estado', '==', 'abierto').get();
+      if (q.docs.some(d => d.data().caja === caja)) throw {code: 'ya'};
+      const now = Date.now(); const id = `${dstr(new Date(now))}-c${caja}-${Math.random().toString(36).slice(2, 7)}`;
+      await S.db.doc(sp('turnos/' + id)).set({id, caja, cajaNombre: cajaNom(caja), sucursal: S.suc, estado: 'abierto', ts: now, fondo: r2(fondo),
+        abre: {por: cajeroActual(), usuario: S.me?.usuario || '', uid: S.uid}, movs: [], arqueos: [], cierre: null});
+    });
+    ls.set('fondo.' + S.suc + '.' + caja, String(fondo));
+    S.cajaSheet = false; closeModal(); toast(`${cajaNom(caja)} abierta con fondo de ${money(fondo)}.`);
+  } catch (e) { console.warn(e); toast(e && e.code === 'ya' ? `${cajaNom(caja)} ya está abierta en otro equipo.` : 'No se pudo abrir la caja. Revise la conexión.'); }
+}
+async function turnoUpdate(t, fn) {
+  const ref = S.db.doc(sp('turnos/' + t.id));
+  return withLock(ref, async () => { const g = await ref.get(); const d = g.data(); if (!g.exists || d.estado !== 'abierto') throw {code: 'cerrado'}; const ch = await fn(d); await ref.update(ch); return {...d, ...ch}; });
+}
+async function cajaMov(tipo) {
+  const t = turnoAct(); if (!t) return; S.cajaSheet = false;
+  const res = await dialog(`<h2>${tipo === 'entrada' ? 'Entrada de efectivo' : 'Salida de efectivo'}<small>${cajaNom(t.caja)} · dinero que ${tipo === 'entrada' ? 'entra a la gaveta y no es venta' : 'sale de la gaveta (pagos, retiros a caja fuerte)'}</small></h2>
+    <label class="field"><span>Monto (${esc(sym())})</span><input class="inp num" id="mvM" inputmode="decimal" style="font-size:20px;height:52px"></label>
+    <label class="field"><span>Motivo</span><input class="inp" id="mvMot" placeholder="${tipo === 'entrada' ? 'Ej. cambio adicional' : 'Ej. pago hielo, retiro a caja fuerte'}"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Registrar</button></div>`, '',
+    () => { const m = parseFloat($('#mvM').value.replace(',', '.')); const mot = $('#mvMot').value.trim(); if (!(m > 0)) { toast('Escriba el monto.'); return false; } if (mot.length < 3) { toast('Escriba el motivo.'); return false; } return {m, mot}; });
+  if (!res) return cajaMenu();
+  if (tipo === 'salida' && !esSuper() && !(await askPin('Autorizar salida de efectivo'))) return cajaMenu();
+  try { await turnoUpdate(t, d => ({movs: [...(d.movs || []), {tipo, monto: r2(res.m), motivo: res.mot, ts: Date.now(), por: cajeroActual()}]})); toast(tipo === 'entrada' ? 'Entrada registrada.' : 'Salida registrada.'); }
+  catch (e) { toast(e && e.code === 'cerrado' ? 'Esa caja ya fue cerrada.' : 'No se pudo registrar.'); }
+  cajaMenu();
+}
+async function cajaArqueo() {
+  const t = turnoAct(); if (!t) return; S.cajaSheet = false;
+  const res = await dialog(`<h2>Arqueo de ${cajaNom(t.caja)}<small>Conteo de control: la caja sigue abierta</small></h2>
+    <label class="field"><span>Efectivo contado en la gaveta, incluido el fondo (${esc(sym())})</span><input class="inp num" id="aqC" inputmode="decimal" style="font-size:20px;height:52px"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Registrar arqueo</button></div>`, '',
+    () => { const c = parseFloat($('#aqC').value.replace(',', '.')); if (!(c >= 0)) { toast('Escriba el monto contado.'); return false; } return c; });
+  if (res === false || res == null) return cajaMenu();
+  try {
+    let R;
+    await turnoUpdate(t, async d => { R = await calcTurno(d); return {arqueos: [...(d.arqueos || []), {ts: Date.now(), por: cajeroActual(), contado: r2(res), esperado: R.esperado, dif: r2(res - R.esperado)}]}; });
+    const dif = r2(res - R.esperado);
+    if (esSuper()) { await dialog(`<h2>Arqueo registrado</h2><dl class="tot"><dt>Contado</dt><dd>${money(res)}</dd><dt>Esperado</dt><dd>${money(R.esperado)}</dd><dt class="big">${dif < 0 ? 'Faltante' : dif > 0 ? 'Sobrante' : 'Diferencia'}</dt><dd class="big ${dif < 0 ? 'bad' : ''}">${money(Math.abs(dif))}</dd></dl><div class="row-actions"><button class="primary" data-act="m-cancel">Listo</button></div>`); }
+    else toast('Arqueo registrado. El encargado revisa el resultado.');
+  } catch (e) { console.warn(e); toast(e && e.code === 'cerrado' ? 'Esa caja ya fue cerrada.' : 'No se pudo registrar el arqueo.'); }
+  cajaMenu();
+}
+async function cajaCerrar() {
+  const t = turnoAct(); if (!t) return; S.cajaSheet = false;
+  const res = await dialog(`<h2>Cerrar ${cajaNom(t.caja)}<small>Abierta desde las ${ftime(t.ts)} por ${esc(t.abre?.por || '')}</small></h2>
+    <p class="note" style="margin:0">Cuente <b>todo</b> el efectivo de la gaveta, incluido el fondo inicial, y escriba el total.</p>
+    <label class="field"><span>Efectivo contado (${esc(sym())})</span><input class="inp num" id="ccC" inputmode="decimal" style="font-size:22px;height:56px"></label>
+    <label class="field"><span>Nota (opcional)</span><input class="inp" id="ccN" placeholder="Ej. billete dudoso, vuelto pendiente"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="danger" data-act="m-ok">Cerrar caja</button></div>`, '',
+    () => { const c = parseFloat($('#ccC').value.replace(',', '.')); if (!(c >= 0)) { toast('Escriba el efectivo contado.'); return false; } return {c, nota: $('#ccN').value.trim()}; });
+  if (!res) return cajaMenu();
+  const sup = esSuper();
+  if (!sup && !(await askPin('Autorizar cierre de caja'))) return cajaMenu();
+  try {
+    let fin;
+    await turnoUpdate(t, async d => {
+      const R = await calcTurno(d); const now = Date.now();
+      const cierre = {ts: now, por: cajeroActual(), autoriza: sup ? cajeroActual() : 'PIN de supervisor', contado: r2(res.c), dif: r2(res.c - R.esperado), nota: res.nota, ...R};
+      fin = {...d, estado: 'cerrado', cierre}; return {estado: 'cerrado', cierre, tsCierre: now};
+    });
+    S.lastCierre = fin;
+    await dialog(`<h2>${cajaNom(fin.caja)} cerrada</h2><div class="receipt">${cierreHTML(fin)}</div>
+      <div class="row-actions"><button class="ghost" data-act="cierrePrt">Imprimir cierre</button><button class="primary" data-act="m-cancel">Listo</button></div>`, 'wide');
+  } catch (e) { console.warn(e); toast(e && e.code === 'cerrado' ? 'Esa caja ya fue cerrada.' : 'No se pudo cerrar la caja. Intente de nuevo.'); }
+}
+function cierreHTML(t) {
+  const c = t.cierre || {}; const dif = +c.dif || 0;
+  return `<div class="c biz">${esc(S.neg.nombre || '')}</div><div class="c">${esc(sucOf(t.sucursal || S.suc).nombre)}</div>
+    <div class="c" style="font-weight:600">CIERRE DE ${esc((t.cajaNombre || cajaNom(t.caja)).toUpperCase())}</div><hr>
+    <div class="r"><span>Apertura</span><span>${fdt(t.ts)}</span></div><div class="r"><span>Abrió</span><span>${esc(t.abre?.por || '')}</span></div>
+    <div class="r"><span>Cierre</span><span>${fdt(c.ts)}</span></div><div class="r"><span>Cerró</span><span>${esc(c.por || '')}</span></div><div class="r"><span>Autorizó</span><span>${esc(c.autoriza || '')}</span></div><hr>
+    <div class="r"><span>Ventas (${c.n || 0})</span><span>${money(c.total)}</span></div>
+    <div class="r"><span>&nbsp;&nbsp;Efectivo</span><span>${money(c.efectivo)}</span></div><div class="r"><span>&nbsp;&nbsp;Tarjeta</span><span>${money(c.tarjeta)}</span></div><div class="r"><span>&nbsp;&nbsp;Transferencia</span><span>${money(c.transferencia)}</span></div>
+    <div class="r"><span>Anuladas (${c.anuladas || 0})</span><span>${money(c.montoAnulado)}</span></div><hr>
+    <div class="r"><span>Fondo inicial</span><span>${money(t.fondo)}</span></div><div class="r"><span>+ Ventas en efectivo</span><span>${money(c.efectivo)}</span></div>
+    <div class="r"><span>+ Entradas</span><span>${money(c.entradas)}</span></div><div class="r"><span>− Salidas</span><span>${money(c.salidas)}</span></div>
+    <div class="r tt"><span>ESPERADO</span><span>${money(c.esperado)}</span></div><div class="r tt"><span>CONTADO</span><span>${money(c.contado)}</span></div>
+    <div class="r tt"><span>${dif < 0 ? 'FALTANTE' : dif > 0 ? 'SOBRANTE' : 'DIFERENCIA'}</span><span>${money(Math.abs(dif))}</span></div>
+    ${(t.movs || []).length ? '<hr>' + t.movs.map(m => `<div class="r"><span>${ftime(m.ts)} ${m.tipo === 'entrada' ? 'Entrada' : 'Salida'}: ${esc(m.motivo)}</span><span>${m.tipo === 'salida' ? '−' : ''}${money(m.monto)}</span></div>`).join('') : ''}
+    ${(t.arqueos || []).length ? '<hr>' + t.arqueos.map(a => `<div class="r"><span>Arqueo ${ftime(a.ts)} (${esc(a.por)})</span><span>${a.dif < 0 ? '−' : a.dif > 0 ? '+' : ''}${money(Math.abs(a.dif))}</span></div>`).join('') : ''}
+    ${c.nota ? `<hr><div>Nota: ${esc(c.nota)}</div>` : ''}<hr><div class="c">Firma cajero ____________________</div><div class="c" style="margin-top:14px">Firma supervisor ________________</div>`;
 }
 
 /* ---------------- recibo ---------------- */
@@ -1482,7 +1639,7 @@ function viewRep() {
   if (!esDueno() || S.sucursales.length < 2 || (R.suc !== '*' && !S.sucursales.some(x => x.id === R.suc))) R.suc = S.suc;
   main.innerHTML = `<section class="view">
     <div class="vhead"><h1>Reportes<small id="rSub"></small></h1>
-      <div class="seg sm" id="rTabs">${[['ventas', 'Ventas'], ['ingredientes', 'Ingredientes'], ['anuladas', 'Anuladas']].map(([k, l]) => `<button data-act="rtab" data-v="${k}" aria-pressed="${R.tab === k}">${l}</button>`).join('')}</div>
+      <div class="seg sm" id="rTabs">${[['ventas', 'Ventas'], ['cajas', 'Cajas'], ['ingredientes', 'Ingredientes'], ['anuladas', 'Anuladas']].map(([k, l]) => `<button data-act="rtab" data-v="${k}" aria-pressed="${R.tab === k}">${l}</button>`).join('')}</div>
       ${esDueno() && S.sucursales.length > 1 ? `<select class="inp" id="rSuc" style="width:auto" aria-label="Sucursal"><option value="*" ${R.suc === '*' ? 'selected' : ''}>Todas las sucursales</option>${S.sucursales.map(x => `<option value="${esc(x.id)}" ${R.suc === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>` : ''}
       <button class="ghost sm" data-act="rcsv">Exportar CSV</button></div>
     <div class="vhead" style="background:transparent;padding-top:10px;padding-bottom:10px">
@@ -1507,13 +1664,15 @@ async function loadRep() {
   const ids = R.suc === '*' ? S.sucursales.map(x => x.id) : [R.suc || S.suc];
   $('#rSub').textContent = `${R.suc === '*' ? 'Todas las sucursales' : sucOf(ids[0]).nombre} · ${fdate(a)} – ${fdate(b - 1)}`;
   body.innerHTML = `<div class="empty">Calculando…</div>`;
-  let facs = [], movs = [], capped = false; const inv = {};
+  let facs = [], movs = [], capped = false, turnos = []; const inv = {};
   try {
     if (S.db) for (const sid of ids) {
       const fs = await S.db.collection(sp('facturas', sid)).where('ts', '>=', a).orderBy('ts').limit(1000).get();
       facs.push(...fs.docs.map(d => ({sucursal: sid, ...d.data()})).filter(f => f.ts < b)); capped = capped || fs.size >= 1000;
       const ms = await S.db.collection(sp('movimientos', sid)).where('ts', '>=', a).orderBy('ts').limit(1000).get();
       movs.push(...ms.docs.map(d => ({sucursal: sid, ...d.data()})).filter(m => m.ts < b));
+      const ts = await S.db.collection(sp('turnos', sid)).where('ts', '>=', a).orderBy('ts').limit(500).get();
+      turnos.push(...ts.docs.map(d => ({sucursal: sid, ...d.data()})).filter(t => t.ts < b));
       let items = S.inv;
       if (sid !== S.suc) { const g = await S.db.doc(sp('datos/inventario', sid)).get(); items = g.exists ? (g.data().items || {}) : {}; }
       for (const [k, i] of Object.entries(items)) {
@@ -1523,7 +1682,8 @@ async function loadRep() {
     }
     facs.sort((x, y) => x.ts - y.ts); movs.sort((x, y) => x.ts - y.ts);
   } catch (e) { console.warn(e); body.innerHTML = `<div class="empty"><b>No se pudo leer la información</b><span>Revise la conexión y vuelva a intentar.</span><button class="ghost sm" data-act="rload">Reintentar</button></div>`; return; }
-  R.data = {facs, movs, a, b, capped, inv, multi: ids.length > 1, ids};
+  turnos.sort((x, y) => y.ts - x.ts);
+  R.data = {facs, movs, a, b, capped, inv, turnos, multi: ids.length > 1, ids};
   renderRep();
 }
 function repVentas(D) {
@@ -1598,6 +1758,33 @@ function repIng(D) {
     ${D.movs.length ? `<div class="sect"><h3>Movimientos de inventario</h3><div class="tbl"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Ingrediente</th><th class="n">Cantidad</th><th class="n">Queda</th><th>Nota</th><th>Por</th></tr></thead><tbody>
       ${D.movs.slice().reverse().map(m => `<tr><td class="mono" style="white-space:nowrap">${fdt(m.ts)}</td><td>${m.tipo === 'entrada' ? 'Entrada' : 'Ajuste'}</td><td>${esc(m.nombre)}</td><td class="n ${m.cantidad < 0 ? 'bad' : ''}">${m.cantidad > 0 ? '+' : ''}${fmtQty(m.cantidad, m.unidad)}</td><td class="n">${fmtQty(m.despues, m.unidad)}</td><td>${esc(m.nota || '')}</td><td>${esc(m.cajero || '')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
 }
+function repCajas(D) {
+  const T = D.turnos || [];
+  if (!T.length) return `<div class="empty">${ico('especial')}<b>Sin aperturas de caja en este periodo</b><span>Cada apertura, arqueo y cierre de caja aparece aquí con su diferencia.</span></div>`;
+  const cer = T.filter(t => t.estado === 'cerrado'); const ab = T.filter(t => t.estado !== 'cerrado');
+  const falt = cer.filter(t => (t.cierre?.dif || 0) < 0), sob = cer.filter(t => (t.cierre?.dif || 0) > 0);
+  const sumD = l => l.reduce((a, t) => a + Math.abs(t.cierre?.dif || 0), 0);
+  S.repTurnos = T;
+  return `<div class="kpis">
+      <div class="kpi"><span class="lbl">Cierres</span><b>${cer.length}</b><em>${ab.length ? ab.length + ' caja' + (ab.length > 1 ? 's' : '') + ' abierta' + (ab.length > 1 ? 's' : '') : 'ninguna caja abierta'}</em></div>
+      <div class="kpi"><span class="lbl">Faltantes</span><b class="${falt.length ? 'bad' : ''}">${money(sumD(falt))}</b><em>${falt.length} cierre${falt.length === 1 ? '' : 's'}</em></div>
+      <div class="kpi"><span class="lbl">Sobrantes</span><b>${money(sumD(sob))}</b><em>${sob.length} cierre${sob.length === 1 ? '' : 's'}</em></div>
+      <div class="kpi"><span class="lbl">Efectivo cerrado</span><b>${money(cer.reduce((a, t) => a + (t.cierre?.contado || 0), 0))}</b><em>contado en los cierres</em></div></div>
+    <div class="sect"><h3>Aperturas y cierres</h3><div class="tbl"><table><thead><tr>${D.multi ? '<th>Sucursal</th>' : ''}<th>Caja</th><th>Apertura</th><th>Cierre</th><th>Cajero(s)</th><th class="n">Fondo</th><th class="n">Ventas</th><th class="n">Efectivo esperado</th><th class="n">Contado</th><th class="n">Diferencia</th><th></th></tr></thead><tbody>
+      ${T.map(t => { const c = t.cierre; const dif = c ? c.dif : null; return `<tr>${D.multi ? `<td>${esc(sucOf(t.sucursal).nombre)}</td>` : ''}<td>${esc(t.cajaNombre || cajaNom(t.caja))}</td><td class="mono" style="white-space:nowrap">${fdt(t.ts)}</td>
+        <td class="mono" style="white-space:nowrap">${c ? fdt(c.ts) : '<span class="pill warn">Abierta</span>'}</td><td>${esc(t.abre?.por || '')}${c && c.por !== t.abre?.por ? ' → ' + esc(c.por) : ''}</td>
+        <td class="n">${money(t.fondo)}</td><td class="n">${c ? money(c.total) : '—'}</td><td class="n">${c ? money(c.esperado) : '—'}</td><td class="n">${c ? money(c.contado) : '—'}</td>
+        <td class="n ${dif < 0 ? 'bad' : ''}">${c ? (dif < 0 ? '−' : dif > 0 ? '+' : '') + money(Math.abs(dif)) : '—'}</td>
+        <td>${c ? `<button class="ghost sm" data-act="turnoVer" data-id="${esc(t.id)}">Ver</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div>
+    ${T.some(t => (t.arqueos || []).length) ? `<div class="sect"><h3>Arqueos</h3><div class="tbl"><table><thead><tr><th>Caja</th><th>Hora</th><th>Contó</th><th class="n">Contado</th><th class="n">Esperado</th><th class="n">Diferencia</th></tr></thead><tbody>
+      ${T.flatMap(t => (t.arqueos || []).map(a => `<tr><td>${esc(t.cajaNombre || cajaNom(t.caja))}${D.multi ? ' · ' + esc(sucOf(t.sucursal).nombre) : ''}</td><td class="mono">${fdt(a.ts)}</td><td>${esc(a.por)}</td><td class="n">${money(a.contado)}</td><td class="n">${money(a.esperado)}</td><td class="n ${a.dif < 0 ? 'bad' : ''}">${a.dif < 0 ? '−' : a.dif > 0 ? '+' : ''}${money(Math.abs(a.dif))}</td></tr>`)).join('')}</tbody></table></div></div>` : ''}`;
+}
+function verTurno(id) {
+  const t = (S.repTurnos || []).find(x => x.id === id); if (!t) return;
+  S.lastCierre = t;
+  dialog(`<h2>${esc(t.cajaNombre || cajaNom(t.caja))} · ${fdate(t.ts)}</h2><div class="receipt">${cierreHTML(t)}</div>
+    <div class="row-actions"><button class="ghost" data-act="cierrePrt">Imprimir cierre</button><button class="primary" data-act="m-cancel">Listo</button></div>`, 'wide');
+}
 function repAnul(D) {
   const an = D.facs.filter(f => f.estado === 'anulada'); const em = D.facs.filter(f => f.estado === 'emitida');
   const ta = an.reduce((s, f) => s + f.total, 0), te = em.reduce((s, f) => s + f.total, 0);
@@ -1612,7 +1799,7 @@ function repAnul(D) {
 }
 function renderRep() {
   const body = $('#rBody'); const D = S.rep.data; if (!body || !D) return;
-  const fn = {ventas: repVentas, ingredientes: repIng, anuladas: repAnul}[S.rep.tab];
+  const fn = {ventas: repVentas, cajas: repCajas, ingredientes: repIng, anuladas: repAnul}[S.rep.tab];
   body.innerHTML = (S.offline ? `<div class="banner" style="margin:0 0 14px">Sin conexión con la base de datos: los reportes están vacíos.</div>` : '') + fn(D) + (D.capped ? `<p class="note">El periodo tiene más de 1000 facturas; se muestran las primeras 1000. Use un rango más corto.</p>` : '');
 }
 async function exportCSV() {
@@ -1623,6 +1810,9 @@ async function exportCSV() {
   if (tab === 'ventas') {
     rows.push(['Sucursal', 'Factura', 'Fecha', 'Hora', 'Estado', 'Cajero', 'Tipo', 'Cédula', 'Cliente', 'Producto', 'Tamaño', 'Indicación', 'Cantidad', 'Precio', 'Total línea', 'Total factura', 'IVA', 'Pago']);
     D.facs.forEach(f => f.items.forEach(it => rows.push([sucOf(f.sucursal).nombre, f.numero, fdate(f.ts), ftime(f.ts), f.estado, f.cajero, f.tipo, f.cliente?.nit, f.cliente?.nombre, it.nombre, it.size, it.nota || '', it.qty, it.precio, it.total, f.total, f.iva, f.pago])));
+  } else if (tab === 'cajas') {
+    rows.push(['Sucursal', 'Caja', 'Apertura', 'Abrió', 'Cierre', 'Cerró', 'Autorizó', 'Fondo', 'Ventas', 'Efectivo', 'Tarjeta', 'Transferencia', 'Entradas', 'Salidas', 'Esperado', 'Contado', 'Diferencia', 'Nota']);
+    (D.turnos || []).forEach(t => { const c = t.cierre || {}; rows.push([sucOf(t.sucursal).nombre, t.cajaNombre || cajaNom(t.caja), fdt(t.ts), t.abre?.por, c.ts ? fdt(c.ts) : 'Abierta', c.por, c.autoriza, t.fondo, c.total, c.efectivo, c.tarjeta, c.transferencia, c.entradas, c.salidas, c.esperado, c.contado, c.dif, c.nota]); });
   } else if (tab === 'ingredientes') {
     const cons = {}; D.facs.filter(f => f.estado === 'emitida').forEach(f => Object.entries(f.consumo || {}).forEach(([k, v]) => cons[k] = (cons[k] || 0) + v));
     rows.push(['Ingrediente', 'Unidad', 'Consumido', 'Existencia actual', 'Mínimo', 'Costo por unidad', 'Costo consumido']);
@@ -1853,6 +2043,7 @@ async function sucEdit(id) {
       <label class="field"><span>Serie de facturas</span><input class="inp mono" id="suS" value="${esc(x.serie)}" maxlength="4"></label>
       <label class="field" style="grid-column:1/-1"><span>Dirección (sale en el comprobante)</span><input class="inp" id="suD" value="${esc(x.direccion || '')}"></label>
       <label class="field"><span>Teléfono</span><input class="inp mono" id="suT" value="${esc(x.telefono || '')}"></label>
+      <label class="field"><span>Cajas (puestos de cobro)</span><input class="inp num" id="suC" inputmode="numeric" value="${esc(x.cajas || 2)}" maxlength="1"></label>
       ${isNew ? '' : `<label class="field"><span>Próximo número de factura</span><input class="inp num" id="suX" inputmode="numeric" value="${next}"></label>`}
     </div>
     ${isNew ? `<p class="note" style="margin:0">Se crea con los mismos ingredientes de ${esc(sucAct().nombre)}, con existencia en cero. Después registre las entradas en Inventario y cree sus usuarios.</p>` : `<label class="check"><input type="checkbox" id="suA" ${x.activa === false ? '' : 'checked'}><span>Sucursal abierta</span></label>`}
@@ -1862,7 +2053,8 @@ async function sucEdit(id) {
       const serie = $('#suS').value.toUpperCase().replace(/[^A-Z0-9]/g, ''); if (!serie) { toast('Escriba la serie.'); return false; }
       if (S.sucursales.some(o => o.id !== nid && o.serie === serie)) { toast('Esa serie ya la usa otra sucursal.'); return false; }
       const nx = isNew ? 1 : parseInt($('#suX').value, 10); if (!(nx >= 1)) { toast('El próximo número debe ser 1 o mayor.'); return false; }
-      return {nombre, serie, direccion: $('#suD').value.trim(), telefono: $('#suT').value.trim(), activa: isNew ? true : $('#suA').checked, next: nx};
+      const cajas = parseInt($('#suC').value, 10); if (!(cajas >= 1 && cajas <= 9)) { toast('Las cajas deben ser de 1 a 9.'); return false; }
+      return {nombre, serie, cajas, direccion: $('#suD').value.trim(), telefono: $('#suT').value.trim(), activa: isNew ? true : $('#suA').checked, next: nx};
     });
   if (!res) return;
   try {
@@ -1968,7 +2160,7 @@ const VIEWS = {venta: viewVenta, cocina: viewCocina, facturas: viewFacturas, inv
 
 /* ---------------- modales ---------------- */
 function openModal(html) { const m = $('#modal'); m.innerHTML = html; m.hidden = false; const f = m.querySelector('input:not([type=checkbox]),textarea'); if (f && matchMedia('(pointer:fine)').matches) f.focus(); }
-function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
+function closeModal() { const m = $('#modal'); m.hidden = true; m.innerHTML = ''; S.cajaSheet = false; }
 function dialog(html, cls = '', onOk) {
   return new Promise(res => {
     openModal(`<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`);
@@ -2066,6 +2258,15 @@ const ACT = {
   feRetry: t => feRetry(t.dataset.n, t.dataset.c),
   feCred: t => feGuardarCred(t.dataset.v),
   seed: () => seedDB(),
+  cajaMenu: () => cajaMenu(),
+  puestoElegir: () => elegirPuesto(),
+  puestoSet: t => puestoSet(t.dataset.v),
+  cajaAbrir: () => cajaAbrir(),
+  cajaMov: t => cajaMov(t.dataset.v),
+  cajaArqueo: () => cajaArqueo(),
+  cajaCerrar: () => cajaCerrar(),
+  cierrePrt: () => { if (S.lastCierre) printDoc(cierreHTML(S.lastCierre), false); },
+  turnoVer: t => verTurno(t.dataset.id),
   salir: () => firebase.auth().signOut().then(() => location.reload()),
   primerDueno: () => primerDueno(),
   meMenu: () => meMenu(),
