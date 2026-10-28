@@ -239,8 +239,11 @@ tfoot td{font-weight:700;border-top:1px solid var(--line)}
 .pk-size strong{font-size:16px;margin-top:4px}
 .pk-size i{font-style:normal;font-size:10.5px;color:var(--mute)}
 .pk-size.low i{color:var(--warn)} .pk-size.out{opacity:.5} .pk-size.out i{color:var(--bad)}
-.pk-dw{height:64px;display:grid;place-items:center}
-.pk-dia{width:calc(60px * var(--d));height:calc(60px * var(--d));border:1.5px solid var(--ink);border-radius:50%;box-shadow:inset 0 0 0 4px var(--soft)}
+.pk-dw{height:96px;display:grid;place-items:center}
+.pk-dia{position:relative;width:calc(92px * var(--d));height:calc(92px * var(--d));border:1.5px solid var(--ink);border-radius:50%;box-shadow:inset 0 0 0 4px var(--soft);overflow:hidden;display:block}
+.pk-dia img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.22);display:block}
+.pk-dia.real img{transform:none}
+.pk-size.out .pk-dia img{filter:grayscale(.85);opacity:.6}
 .line-name em{display:block;font:italic 600 11.5px var(--f-ui);color:var(--ink);margin-top:1px}
 .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:18px;align-items:start}
 .receipt.kit{font-size:13.5px}
@@ -973,12 +976,12 @@ function openPicker(id) {
   const p = prod(id); if (!p) return;
   if (p.tamanos.length === 1) { addToCart(id, p.tamanos[0], ''); return; }
   PICK = id;
-  const used = consumoOf(S.cart);
+  const used = consumoOf(S.cart); const foto = fotoDe(p);
   openModal(`<div class="sheet picker" role="dialog" aria-modal="true" aria-label="Elegir tamaño de ${esc(p.nombre)}">
     <div class="pk-head">${fotoHTML(p, 'pk-img')}<div style="min-width:0"><h2>${esc(p.nombre)}</h2><span class="note">Elija el tamaño y se agrega a la comanda</span></div><button class="ghost sm" data-act="m-cancel" style="margin-left:auto">Cerrar</button></div>
     <div class="pk-sizes">${p.tamanos.map(s => {
       const n = avail(p, s, used); const lab = n === Infinity ? '' : n <= 0 ? 'agotado' : (n > 99 ? '99+' : n) + ' disponibles';
-      return `<button class="pk-size ${n <= 0 ? 'out' : n <= 5 ? 'low' : ''}" data-act="pick" data-v="${s}"><span class="pk-dw"><span class="pk-dia" style="--d:${DIA[s] || 1}"></span></span><b>${SIZES[s].l}</b><span class="mono mute">${SIZES[s].i}</span><strong class="mono">${money0(priceOf(p, s))}</strong><i>${lab}</i></button>`;
+      return `<button class="pk-size ${n <= 0 ? 'out' : n <= 5 ? 'low' : ''}" data-act="pick" data-v="${s}"><span class="pk-dw"><span class="pk-dia ${foto?.real ? 'real' : ''}" style="--d:${DIA[s] || 1}">${foto ? `<img src="${foto.src}" data-fb="${foto.fb}" alt="" decoding="async" referrerpolicy="no-referrer" onerror="fotoFallo(this)">` : ''}</span></span><b>${SIZES[s].l}</b><span class="mono mute">${SIZES[s].i}</span><strong class="mono">${money0(priceOf(p, s))}</strong><i>${lab}</i></button>`;
     }).join('')}</div>
     <div class="field"><span>Indicación para cocina (opcional)</span><div class="chips" id="pkChips">${NOTAS.map(n => `<button data-act="pkNota" data-v="${esc(n)}" aria-pressed="false">${esc(n)}</button>`).join('')}</div>
       <input class="inp" id="pkNota" placeholder="Ej. mitad pepperoni, mitad hongos" autocomplete="off"></div>
