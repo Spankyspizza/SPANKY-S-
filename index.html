@@ -1057,7 +1057,11 @@ function cycleSize(key) {
 async function lineExtras(key) {
   const it = S.cart.find(i => i.key === key); if (!it) return;
   const exs = extrasActivos();
-  if (!exs.length) return toast(esDueno() ? 'No hay extras en el menú. Cárguelos en Menú → Extras → "Cargar extras de ejemplo".' : 'No hay extras en el menú. El dueño debe crearlos en Menú → Extras.');
+  if (!exs.length) {
+    if (!esDueno()) return toast('No hay extras en el menú. El dueño debe crearlos en Menú → Extras.');
+    if (await extrasEjemplo()) { await sleep(700); return lineExtras(key); }
+    return;
+  }
   const tiene = new Set((it.extras || []).map(e => e.id));
   const res = await dialog(`<h2>Extras · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplican a las ' + it.qty + ' pizzas de esta línea' : 'Toque los extras que pide el cliente'}</small></h2>
     <div class="chips" id="lxChips">${exs.map(e => `<button data-act="pkExtra" data-v="${esc(e.id)}" aria-pressed="${tiene.has(e.id)}">${esc(e.nombre)} <b class="mono" style="margin-left:4px">+${money0(priceOf(e, 'U'))}</b></button>`).join('')}</div>
@@ -1907,7 +1911,8 @@ async function extrasEjemplo() {
       await refs.menu.set(m);
     });
     toast('Extras cargados. Ya aparecen al elegir el tamaño de una pizza.');
-  } catch (e) { console.warn(e); toast('No se pudieron cargar los extras.'); }
+    return true;
+  } catch (e) { console.warn(e); toast(e && e.code === 'permission-denied' ? 'Firebase no permitió guardar el menú (solo el dueño puede).' : 'No se pudieron cargar los extras.'); }
 }
 
 async function promoToggle(id) {
