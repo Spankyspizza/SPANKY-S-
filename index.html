@@ -1695,6 +1695,7 @@ function renderMenu() {
   if (S.mcat === 'promos') { $('#mSub').textContent = 'Promociones de regalo y descuentos'; return renderPromos(b); }
   const list = S.productos.filter(p => S.mcat === 'todos' || p.cat === S.mcat);
   if (!S.ready) { b.innerHTML = `<div class="empty">Cargando menú…</div>`; return; }
+  if (S.mcat === 'extra' && !list.length) { b.innerHTML = `<div class="empty">${ico('extra')}<b>Todavía no hay extras</b><span>Los extras (extra queso, extra pepperoni…) salen dentro de la ventana de tamaños de cada pizza y se cobran en su propia línea.</span><button class="primary sm" data-act="extrasEjemplo">Cargar extras de ejemplo</button><button class="ghost sm" data-act="pNew">+ Crear un extra</button></div>`; return; }
   if (!list.length) { b.innerHTML = `<div class="empty">${ico('queso')}<b>No hay productos aquí</b><span>Cree un producto, asígnele un icono, sus precios por tamaño y la receta que descuenta del inventario.</span><button class="primary sm" data-act="pNew">+ Producto</button></div>`; return; }
   const iva = 1 + (+S.neg.iva || 0) / 100;
   b.innerHTML = `<div class="tbl"><table><thead><tr><th>Producto</th><th>Precios</th><th class="n">Ingred.</th><th class="n">Costo receta</th><th class="n">Margen</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -1861,6 +1862,34 @@ async function promoEdit(id, tipoNuevo) {
     toast(res === 'del' ? 'Eliminada.' : 'Guardada.');
   } catch (e) { console.warn(e); toast('No se pudo guardar.'); }
 }
+
+// Extras de ejemplo: usa los ingredientes que existan en el inventario (por código o por nombre).
+const EXTRAS_EJEMPLO = [['Extra queso', 1000, ['mozzarella', 'queso'], 60], ['Extra pepperoni', 800, ['pepperoni'], 40], ['Extra jamón', 800, ['jamon', 'jamón'], 40],
+  ['Extra hongos', 600, ['hongos'], 40], ['Extra tocino', 900, ['tocino'], 35], ['Extra pollo', 900, ['pollo'], 50], ['Extra piña', 500, ['pina', 'piña'], 50],
+  ['Extra cebolla', 400, ['cebolla'], 30], ['Extra chile', 400, ['chile'], 30], ['Extra aceitunas', 600, ['aceituna'], 25], ['Extra salsa BBQ', 400, ['bbq'], 30]];
+async function extrasEjemplo() {
+  if (!esDueno()) return;
+  const sinAcento = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const buscaIng = claves => { for (const c of claves) { const k = sinAcento(c); if (S.inv[k]) return k; const hit = Object.entries(S.inv).find(([, v]) => sinAcento(v.nombre).includes(k)); if (hit) return hit[0]; } return null; };
+  const nuevos = [];
+  for (const [nombre, precio, claves, gramos] of EXTRAS_EJEMPLO) {
+    const ing = buscaIng(claves); if (!ing) continue;
+    const id = sinAcento(nombre).replace(/[^a-z0-9]+/g, '-');
+    nuevos.push({id, nombre, cat: 'extra', icon: 'extra', activo: true, tamanos: ['U'], precios: {U: precio}, receta: {U: {[ing]: S.inv[ing].unidad === 'unidad' ? 1 : gramos}}, cabys: ''});
+  }
+  if (!nuevos.length) return toast('No encontré en el inventario los ingredientes de los extras (queso, pepperoni, jamón…).');
+  if (!(await confirmBox('Cargar extras de ejemplo', `<p style="margin:0">Se agregan ${nuevos.length} extras con precio y receta de ejemplo:</p><p style="margin:0" class="note">${nuevos.map(n => esc(n.nombre) + ' ' + money0(n.precios.U)).join(' · ')}</p><p style="margin:0">Si ya existe un “Extra queso” en Complementos, se pasa a Extras. Después ajuste precios y gramos con Editar.</p>`, 'Cargar'))) return;
+  try {
+    await withLock(refs.menu, async () => {
+      const g = await refs.menu.get(); const m = clone(g.exists ? g.data() : {productos: []}); m.productos = m.productos || [];
+      for (const p of m.productos) if (p.cat !== 'extra' && /^extra\b/i.test(sinAcento(p.nombre))) p.cat = 'extra';
+      for (const n of nuevos) if (!m.productos.some(p => p.id === n.id || (p.cat === 'extra' && sinAcento(p.nombre) === sinAcento(n.nombre)))) m.productos.push(n);
+      await refs.menu.set(m);
+    });
+    toast('Extras cargados. Ya aparecen al elegir el tamaño de una pizza.');
+  } catch (e) { console.warn(e); toast('No se pudieron cargar los extras.'); }
+}
+
 async function promoToggle(id) {
   try { await withLock(refs.promos, async () => { const g = await refs.promos.get(); const l = clone(g.data()?.lista || []); const x = l.find(y => y.id === id); if (x) x.activa = x.activa === false; await refs.promos.set({lista: l}); }); }
   catch { toast('No se pudo cambiar.'); }
@@ -2500,6 +2529,7 @@ const ACT = {
   mcat: t => { S.mcat = t.dataset.v; renderMenu(); },
   pNew: () => S.mcat === 'promos' ? promoEdit(null, 'regalo') : pEdit(null),
   promoNew: t => promoEdit(null, t.dataset.v),
+  extrasEjemplo: () => extrasEjemplo(),
   promoEdit: t => promoEdit(t.dataset.id),
   promoToggle: t => promoToggle(t.dataset.id),
   pEdit: t => pEdit(t.dataset.id),
