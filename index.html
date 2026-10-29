@@ -432,6 +432,7 @@ th{color:var(--brand)}
 .tk-opts{display:flex;gap:6px;flex-wrap:wrap}.tk-opts .on,.tk-opts [aria-pressed="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
 .consumo-box{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:#F4ECFA;border:1px solid #D9C2EC;font-size:13px}.consumo-box span{color:var(--mute)}
 .kcard em.kx,.kit-it em{display:block}
+.exbtn{display:inline-block;margin-top:4px;padding:3px 10px;border:1px dashed var(--brand);border-radius:999px;background:none;color:var(--brand);font-size:11.5px;font-weight:700;min-height:26px}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -960,7 +961,7 @@ function renderTicket() {
     const p = prod(it.id); const multi = p && p.tamanos.length > 1;
     return `<div class="line ${it.promo ? 'promo' : ''}">
       <div class="qty"><button data-act="dec" data-k="${esc(it.key)}" aria-label="Quitar uno">−</button><span>${it.qty}</span><button data-act="inc" data-k="${esc(it.key)}" aria-label="Agregar uno">+</button></div>
-      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${(it.extras || []).map(e => `<em class="ext">+ ${esc(e.nombre)} ${money0(e.precio)}</em>`).join('')}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}</div>
+      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${(it.extras || []).map(e => `<em class="ext">+ ${esc(e.nombre)} ${money0(e.precio)}</em>`).join('')}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}${p?.cat === 'pizza' && !it.promo ? `<button class="exbtn" data-act="lineExtras" data-k="${esc(it.key)}">${(it.extras || []).length ? 'Cambiar extras' : '+ Extra'}</button>` : ''}</div>
       <div class="line-tot">${it.promo ? '<span class="pill ok">Gratis</span>' : money0(lineUnit(it) * it.qty)}</div></div>`;
   }).join('') + promoSugerencias().map(x => `<div class="promo-sug"><span>🎁 <b>${esc(x.pr.nombre)}</b><br><small>Puede agregar ${x.faltan} × ${esc(prod(x.pr.regalo.prod)?.nombre || 'regalo')} gratis</small></span><button class="primary sm" data-act="promoAdd" data-id="${esc(x.pr.id)}">Agregar</button></div>`).join('')
     : `<div class="tk-empty">${ico('pepperoni')}<span>Toque una pizza, elija el tamaño<br>y se agrega a esta comanda.</span></div>`;
@@ -1048,6 +1049,25 @@ function cycleSize(key) {
   const nk = p.id + '|' + sz + '|' + (it.nota || '') + '|' + (it.extras || []).map(e => e.id).sort().join(','); const other = S.cart.find(i => i.key === nk);
   if (other && other !== it) { other.qty += it.qty; S.cart = S.cart.filter(i => i !== it); }
   else { it.size = sz; it.key = nk; it.precio = priceOf(p, sz); }
+  renderGrid(); renderTicket();
+}
+
+
+// Agregar o cambiar extras de una pizza que ya está en la comanda
+async function lineExtras(key) {
+  const it = S.cart.find(i => i.key === key); if (!it) return;
+  const exs = extrasActivos();
+  if (!exs.length) return toast(esDueno() ? 'No hay extras en el menú. Cárguelos en Menú → Extras → "Cargar extras de ejemplo".' : 'No hay extras en el menú. El dueño debe crearlos en Menú → Extras.');
+  const tiene = new Set((it.extras || []).map(e => e.id));
+  const res = await dialog(`<h2>Extras · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplican a las ' + it.qty + ' pizzas de esta línea' : 'Toque los extras que pide el cliente'}</small></h2>
+    <div class="chips" id="lxChips">${exs.map(e => `<button data-act="pkExtra" data-v="${esc(e.id)}" aria-pressed="${tiene.has(e.id)}">${esc(e.nombre)} <b class="mono" style="margin-left:4px">+${money0(priceOf(e, 'U'))}</b></button>`).join('')}</div>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Listo</button></div>`, '',
+    () => [...document.querySelectorAll('#lxChips button[aria-pressed="true"]')].map(b => b.dataset.v));
+  if (!res) return;
+  const extras = res.map(x => prod(x)).filter(Boolean).map(e => ({id: e.id, nombre: e.nombre, precio: priceOf(e, 'U')}));
+  const nk = it.id + '|' + it.size + '|' + (it.nota || '') + '|' + extras.map(e => e.id).sort().join(',');
+  const otra = S.cart.find(i => i.key === nk && i !== it);
+  if (otra) { otra.qty += it.qty; S.cart = S.cart.filter(i => i !== it); } else { it.extras = extras; it.key = nk; }
   renderGrid(); renderTicket();
 }
 
@@ -2555,6 +2575,7 @@ const ACT = {
   feCred: t => feGuardarCred(t.dataset.v),
   seed: () => seedDB(),
   promoAdd: t => promoAdd(t.dataset.id),
+  lineExtras: t => lineExtras(t.dataset.k),
   descMenu: () => descMenu(),
   descQuitar: () => { S.desc = null; renderTicket(); },
   consumoToggle: () => { S.consumo = !S.consumo; if (S.consumo) S.desc = null; renderTicket(); },
