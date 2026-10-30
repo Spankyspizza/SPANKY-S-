@@ -433,6 +433,13 @@ th{color:var(--brand)}
 .consumo-box{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:#F4ECFA;border:1px solid #D9C2EC;font-size:13px}.consumo-box span{color:var(--mute)}
 .kcard em.kx,.kit-it em{display:block}
 .exbtn{display:inline-block;margin-top:4px;padding:3px 10px;border:1px dashed var(--brand);border-radius:999px;background:none;color:var(--brand);font-size:11.5px;font-weight:700;min-height:26px}
+.ajwrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:20px;align-items:start;max-width:1040px}
+.ajnav{display:grid;gap:6px;position:sticky;top:0}
+.ajnav button{display:grid;gap:2px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);min-height:52px}
+.ajnav button b{font-size:14px;color:var(--brand-dark)}.ajnav button span{font-size:11.5px;color:var(--mute);line-height:1.3}
+.ajnav button[aria-current="true"]{background:var(--brand);border-color:var(--brand)}.ajnav button[aria-current="true"] b,.ajnav button[aria-current="true"] span{color:#fff}
+.ajpanel{min-width:0;display:grid;gap:18px}
+@media (max-width:820px){.ajwrap{grid-template-columns:1fr}.ajnav{position:static;display:flex;overflow-x:auto;gap:6px;padding-bottom:4px}.ajnav button{flex:none;min-height:40px}.ajnav button span{display:none}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -1498,10 +1505,43 @@ function feBox(f) {
     return `<div class="febox-r"><b>${esc(FE_TIPO[fe.tipo] || t)}</b><span>${fePill(fe)}${fe.ambiente === 'sandbox' ? ' <span class="pill mute">Pruebas</span>' : ''}</span>
       <span class="mono" style="font-size:11.5px">Consecutivo ${esc(fe.consecutivo || '')}</span><span class="mono" style="font-size:11px;word-break:break-all">Clave ${esc(claveFmt(fe.clave))}</span>
       ${fe.mensaje ? `<span class="${fe.estado === 'rechazado' || fe.estado === 'error' ? 'bad' : 'note'}" style="font-size:12.5px">${esc(fe.mensaje)}</span>` : ''}
-      ${puede ? `<button class="ghost sm" data-act="feRetry" data-n="${esc(f.numero)}" data-c="${campo}" style="justify-self:start">${fe.estado === 'rechazado' ? 'Corregir y emitir de nuevo' : 'Reintentar envío'}</button>` : ''}</div>`;
+      ${fe.correo ? `<span class="${fe.correo.estado === 'error' ? 'bad' : 'note'}" style="font-size:12.5px">Correo al cliente: ${fe.correo.estado === 'enviado' ? 'enviado a ' + esc(fe.correo.para) + ' · ' + fdt(fe.correo.ts) : esc(fe.correo.mensaje || fe.correo.estado)}</span>` : ''}
+      <div class="row" style="gap:6px">${puede ? `<button class="ghost sm" data-act="feRetry" data-n="${esc(f.numero)}" data-c="${campo}">${fe.estado === 'rechazado' ? 'Corregir y emitir de nuevo' : 'Reintentar envío'}</button>` : ''}
+      ${fe.clave && esSuper() ? `<button class="ghost sm" data-act="feXml" data-n="${esc(f.numero)}" data-c="${campo}">Descargar XML</button>` : ''}
+      ${fe.estado === 'aceptado' && ['01', '03'].includes(fe.tipo) && f.cliente?.correo ? `<button class="ghost sm" data-act="feMail" data-n="${esc(f.numero)}" data-c="${campo}">${fe.correo?.estado === 'enviado' ? 'Reenviar correo' : 'Enviar correo'}</button>` : ''}</div></div>`;
   };
   return `<div class="febox"><div class="lbl">Hacienda</div>${linea('Comprobante', f.fe, 'fe')}${f.estado === 'anulada' && (f.feNC || f.fe?.estado === 'aceptado') ? linea('Nota de crédito', f.feNC, 'feNC') : ''}${f.estado === 'anulada' && f.fe && f.fe.estado !== 'aceptado' && !f.feNC ? '<span class="note">La nota de crédito se emite cuando Hacienda acepte el comprobante original.</span>' : ''}</div>`;
 }
+
+// Descarga el XML firmado y la respuesta de Hacienda (para el contador)
+async function feXml(numero, campo) {
+  const f = S.facturas.find(x => x.numero === numero); const fe = f?.[campo]; if (!fe) return;
+  try {
+    const base = S.db.doc(sp('facturas/' + numero));
+    const a = await base.collection('xml').doc(fe.tipo).get(), b = await base.collection('xml').doc(fe.tipo + '_respuesta').get();
+    const bajar = (txt, nombre) => { const u = URL.createObjectURL(new Blob([txt], {type: 'application/xml'})); const l = document.createElement('a'); l.href = u; l.download = nombre; document.body.appendChild(l); l.click(); setTimeout(() => { URL.revokeObjectURL(u); l.remove(); }, 1000); };
+    if (!a.exists) return toast('Todavía no hay XML: el comprobante no se ha firmado.');
+    bajar(a.data().xmlFirmado, fe.clave + '.xml');
+    if (b.exists) setTimeout(() => bajar(b.data().respuestaXml, fe.clave + '_respuesta.xml'), 400);
+    toast(b.exists ? 'Se descargaron el XML y la respuesta de Hacienda.' : 'Se descargó el XML (Hacienda aún no responde).');
+  } catch (e) { console.warn(e); toast('No se pudo descargar el XML.'); }
+}
+async function feMail(numero, campo) {
+  try { await S.db.doc(sp('facturas/' + numero)).update({[campo + '.correo.reenviar']: true}); toast('Envío solicitado. En unos segundos se actualiza el estado.'); }
+  catch { toast('No se pudo solicitar el envío.'); }
+}
+async function feGuardarCorreo() {
+  const g = id => ($('#' + id)?.value || '').trim();
+  const d = {host: g('smH'), port: parseInt(g('smP'), 10) || 465, user: g('smU'), pass: $('#smK').value, from: g('smF') || g('smU')};
+  if (!d.host || !/@/.test(d.user) || !d.pass) return toast('Complete servidor, correo y contraseña.');
+  d.secure = d.port === 465;
+  try {
+    await S.db.doc('privado/correo').set({...d, ts: Date.now()});
+    await S.db.doc('config/fe').set({correo: {user: d.user, from: d.from, host: d.host, ts: Date.now()}}, {merge: true});
+    $('#smK').value = ''; toast('Correo de envío guardado.'); viewAjustes();
+  } catch (e) { toast('No se pudo guardar el correo.'); }
+}
+
 async function feRetry(numero, campo) {
   const f = S.facturas.find(x => x.numero === numero); if (!f || !f[campo]) return;
   if (f[campo].estado === 'rechazado' && !(await confirmBox('Emitir de nuevo', `<p style="margin:0">Hacienda rechazó este comprobante:</p><p style="margin:0" class="bad">${esc(f[campo].mensaje || '')}</p><p class="note" style="margin:0">Corrija primero lo que indica el mensaje (por ejemplo en Ajustes o el código CABYS del producto). Se emitirá un comprobante nuevo con otro consecutivo.</p>`, 'Emitir de nuevo'))) return;
@@ -2143,32 +2183,53 @@ async function exportCSV() {
 }
 
 /* ---------------- AJUSTES ---------------- */
+const AJ_SECS = [
+  ['negocio', 'Negocio', 'Nombre, cédula, dirección y pie del comprobante', true],
+  ['sucursales', 'Sucursales', 'Locales, cajas, serie y numeración', false],
+  ['usuarios', 'Usuarios', 'Personal, roles y accesos', false],
+  ['ventas', 'Ventas y PIN', 'Moneda, IVA y PIN de supervisor', true],
+  ['recetas', 'Recetas', 'Factores por tamaño de pizza', true],
+  ['fe', 'Facturación electrónica', 'Hacienda, credenciales y correo de envío', true],
+  ['herramientas', 'Herramientas', 'Traer datos del sistema anterior', false]
+];
 function viewAjustes() {
   const n = S.neg;
+  if (!AJ_SECS.some(x => x[0] === S.ajSec)) S.ajSec = ls.get('ajSec', 'negocio');
+  const sec = (id, html) => `<div class="ajsec" data-sec="${id}" ${S.ajSec === id ? '' : 'hidden'}>${html}</div>`;
   main.innerHTML = `<section class="view">
-    <div class="vhead"><h1>Ajustes<small>Negocio, sucursales, usuarios y reglas del sistema</small></h1><button class="primary sm" data-act="ajSave">Guardar cambios</button></div>
-    <div class="vbody"><div style="max-width:760px;display:grid;gap:22px">
-      <div class="sect" style="margin:0"><h3>Negocio</h3><div class="grid2">
+    <div class="vhead"><h1>Ajustes<small id="ajSub">${esc((AJ_SECS.find(x => x[0] === S.ajSec) || AJ_SECS[0])[1])}</small></h1><button class="primary sm" data-act="ajSave" id="ajSaveBtn" ${(AJ_SECS.find(x => x[0] === S.ajSec) || [])[3] ? '' : 'hidden'}>Guardar cambios</button></div>
+    <div class="vbody"><div class="ajwrap">
+      <nav class="ajnav" aria-label="Secciones de ajustes">${AJ_SECS.map(([k, l, d]) => `<button data-act="ajSec" data-v="${k}" aria-current="${S.ajSec === k}"><b>${l}</b><span>${d}</span></button>`).join('')}</nav>
+      <div class="ajpanel">
+      ${sec('negocio', `<div class="sect" style="margin:0"><h3>Negocio</h3><div class="grid2">
         <label class="field"><span>Nombre comercial</span><input class="inp" id="ajNom" value="${esc(n.nombre)}"></label>
         <label class="field"><span>Cédula jurídica</span><input class="inp mono" id="ajNit" value="${esc(n.nit)}"></label>
         <label class="field" style="grid-column:1/-1"><span>Dirección</span><input class="inp" id="ajDir" value="${esc(n.direccion)}"></label>
         <label class="field"><span>Teléfono</span><input class="inp mono" id="ajTel" value="${esc(n.telefono)}"></label>
-        <label class="field"><span>Pie del comprobante</span><input class="inp" id="ajPie" value="${esc(n.pie)}"></label></div></div>
-      <div class="sect" style="margin:0" id="ajSuc"></div>
-      <div class="sect" style="margin:0" id="ajUsr"></div>
-      <div class="sect" style="margin:0"><h3>Traer datos del sistema anterior</h3>
-        <p class="note" style="margin:0">Copia a este sistema el menú, las recetas, las fotos, el inventario y, si quiere, las ventas de prueba del sistema anterior (el que se usaba con el usuario riospizza@gmail.com). El sistema anterior no se modifica.</p>
-        <button class="ghost sm" data-act="importar" style="justify-self:start">Traer datos del sistema anterior</button></div>
-      <div class="sect" style="margin:0"><h3>Facturación</h3><div class="grid2">
+        <label class="field"><span>Pie del comprobante</span><input class="inp" id="ajPie" value="${esc(n.pie)}"></label></div></div>`)}
+      ${sec('sucursales', `<div class="sect" style="margin:0" id="ajSuc"></div>`)}
+      ${sec('usuarios', `<div class="sect" style="margin:0" id="ajUsr"></div>`)}
+      ${sec('ventas', `<div class="sect" style="margin:0"><h3>Ventas y PIN</h3><div class="grid2">
         <label class="field"><span>Símbolo de moneda</span><input class="inp mono" id="ajMon" value="${esc(n.moneda || '₡')}" maxlength="4"></label>
         <label class="field"><span>IVA incluido en precios (%)</span><input class="inp num" id="ajIva" inputmode="decimal" value="${n.iva}"></label>
         <label class="field"><span>PIN de supervisor (4 a 6 dígitos)</span><input class="inp mono" id="ajPin" inputmode="numeric" value="${esc(n.pin)}" maxlength="6"></label></div>
-        <p class="note" style="margin:0">El PIN se le pide al usuario de <b>Caja</b> para anular facturas y ajustar inventario por conteo: lo digita el dueño o el encargado. Dueño y encargados no lo necesitan. La serie y el número de factura de cada sucursal se cambian en Sucursales.</p></div>
-      <div class="sect" style="margin:0"><h3>Factores de receta por tamaño</h3><p class="note" style="margin:0">Proporción de ingredientes respecto a la Mediana (1.00). Se usan en el botón “Calcular desde Mediana” al editar una pizza.</p>
-        <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${['P', 'G', 'F'].map(s => `<label class="field"><span>${SIZES[s].l} ${SIZES[s].i}</span><input class="inp num" id="ajM${s}" inputmode="decimal" value="${n.mult?.[s] ?? NEG_DEF.mult[s]}"></label>`).join('')}</div></div>
-      ${feAjustesHTML()}
-    </div></div></section>`;
+        <p class="note" style="margin:0">El PIN se le pide al usuario de <b>Caja</b> para anular facturas, aplicar descuentos, registrar consumo interno, salidas de efectivo, cierres de caja y conteos: lo digita el dueño o el encargado. La serie y el número de factura de cada sucursal se cambian en Sucursales.</p></div>`)}
+      ${sec('recetas', `<div class="sect" style="margin:0"><h3>Factores de receta por tamaño</h3><p class="note" style="margin:0">Proporción de ingredientes respecto a la Mediana (1.00). Se usan en el botón “Calcular desde Mediana” al editar una pizza.</p>
+        <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${['P', 'G', 'F'].map(s => `<label class="field"><span>${SIZES[s].l} ${SIZES[s].i}</span><input class="inp num" id="ajM${s}" inputmode="decimal" value="${n.mult?.[s] ?? NEG_DEF.mult[s]}"></label>`).join('')}</div></div>`)}
+      ${sec('fe', feAjustesHTML())}
+      ${sec('herramientas', `<div class="sect" style="margin:0"><h3>Traer datos del sistema anterior</h3>
+        <p class="note" style="margin:0">Copia a este sistema el menú, las recetas, las fotos, el inventario y, si quiere, las ventas de prueba del sistema anterior (el que se usaba con el usuario riospizza@gmail.com). El sistema anterior no se modifica.</p>
+        <button class="ghost sm" data-act="importar" style="justify-self:start">Traer datos del sistema anterior</button></div>`)}
+      </div></div></div></section>`;
   renderAjListas();
+}
+function ajSec(k) {
+  S.ajSec = k; ls.set('ajSec', k);
+  document.querySelectorAll('.ajsec').forEach(d => d.hidden = d.dataset.sec !== k);
+  document.querySelectorAll('.ajnav button').forEach(b => b.setAttribute('aria-current', b.dataset.v === k));
+  const it = AJ_SECS.find(x => x[0] === k); const sb = $('#ajSaveBtn'); if (sb) sb.hidden = !it?.[3];
+  const sub = $('#ajSub'); if (sub && it) sub.textContent = it[1];
+  main.scrollTop = 0; window.scrollTo(0, 0);
 }
 function feAjustesHTML() {
   const c = S.feCfg || {}, e = c.emisor || {};
@@ -2200,7 +2261,17 @@ function feAjustesHTML() {
       <label class="field"><span>Terminal (caja)</span><input class="inp num" id="feTer" value="${esc(c.terminal || 1)}" inputmode="numeric" maxlength="5"></label>
     </div>
     <p class="note" style="margin:0">Estos datos se guardan con el botón “Guardar cambios” de arriba. El nombre comercial y el teléfono se toman de la sección Negocio. Los códigos de provincia, cantón y distrito son los de la división territorial que usa Hacienda.</p>
-    ${cred('sandbox', 'pruebas')}${cred('production', 'producción')}</div>`;
+    ${cred('sandbox', 'pruebas')}${cred('production', 'producción')}
+    <div class="febox-r" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px"><b>Correo para enviar comprobantes al cliente</b>
+      <span>${c.correo ? `<span class="pill ok">Configurado ${esc(fdt(c.correo.ts))}</span> <span class="note">${esc(c.correo.from || c.correo.user)}</span>` : '<span class="pill warn">Sin configurar</span>'}</span>
+      <span class="note">Cuando Hacienda acepta una <b>factura electrónica</b> (cliente con cédula y correo), el sistema le envía el PDF, el XML y la respuesta de Hacienda. Con Gmail use una “contraseña de aplicación” (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones).</span>
+      <div class="grid2"><label class="field"><span>Servidor SMTP</span><input class="inp mono" id="smH" value="${esc(c.correo?.host || 'smtp.gmail.com')}"></label>
+      <label class="field"><span>Puerto</span><input class="inp num" id="smP" value="465" inputmode="numeric"></label>
+      <label class="field"><span>Correo (usuario)</span><input class="inp mono" id="smU" value="${esc(c.correo?.user || '')}" autocomplete="off" placeholder="facturas@spankys.co.cr"></label>
+      <label class="field"><span>Contraseña</span><input class="inp mono" id="smK" type="password" autocomplete="new-password"></label>
+      <label class="field" style="grid-column:1/-1"><span>Remitente que ve el cliente</span><input class="inp" id="smF" value="${esc(c.correo?.from || '')}" placeholder="SPANKY'S <facturas@spankys.co.cr>"></label></div>
+      <button class="ghost sm" data-act="feCorreo" style="justify-self:start">Guardar correo de envío</button>
+      <span class="note">La contraseña queda guardada de forma que solo el servidor la puede leer.</span></div></div>`;
 }
 async function feGuardarCred(a) {
   const u = $('#feU_' + a).value.trim(), pw = $('#feP_' + a).value, pin = $('#feN_' + a).value.trim(), file = $('#feK_' + a).files[0];
@@ -2578,6 +2649,10 @@ const ACT = {
   ajSave: () => ajSave(),
   feRetry: t => feRetry(t.dataset.n, t.dataset.c),
   feCred: t => feGuardarCred(t.dataset.v),
+  feCorreo: () => feGuardarCorreo(),
+  ajSec: t => ajSec(t.dataset.v),
+  feXml: t => feXml(t.dataset.n, t.dataset.c),
+  feMail: t => feMail(t.dataset.n, t.dataset.c),
   seed: () => seedDB(),
   promoAdd: t => promoAdd(t.dataset.id),
   lineExtras: t => lineExtras(t.dataset.k),
