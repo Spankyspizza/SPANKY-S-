@@ -1205,7 +1205,7 @@ async function cobrar() {
         total, subtotal: sub, iva, ivaPct: +S.neg.iva || 0, pago: esCI ? 'consumo' : S.pago, recibido: esCI ? 0 : r2(rec), cambio: !esCI && S.pago === 'efectivo' ? r2(rec - total) : 0,
         estado: esCI ? 'consumo' : 'emitida', tipoDoc: esCI ? 'consumo' : 'venta', consumo, costo: costoDe(consumo),
         ...(esCI ? {consumoPara: S.consumoPara, valorMenu: cartBruto()} : {}),
-        negocio: {nombre: S.neg.nombre || '', nit: S.neg.nit || '', direccion: suc.direccion || S.neg.direccion || '', telefono: suc.telefono || S.neg.telefono || '', pie: S.neg.pie || '', sucursal: S.sucursales.length > 1 ? suc.nombre : ''}
+        negocio: {nombre: S.neg.nombre || '', nit: S.neg.nit || '', direccion: suc.direccion || S.neg.direccion || '', telefono: suc.telefono || S.neg.telefono || '', web: S.neg.web || '', pie: S.neg.pie || '', sucursal: S.sucursales.length > 1 ? suc.nombre : ''}
       };
       await refs.inv.set(inv);
       await refs.cnt.set(esCI ? {...cnt, nextCI: n + 1} : {...cnt, next: n + 1});
@@ -1373,7 +1373,7 @@ function receiptHTML(f) {
   const pago = (PAGOS.find(t => t[0] === f.pago) || ['', f.pago])[1].replace('Transf.', 'Transferencia');
   return `${f.estado === 'anulada' ? '<div class="stamp">ANULADA</div>' : ''}
     <div class="c biz">${esc(b.nombre || 'Pizzería')}</div>${b.sucursal ? `<div class="c">Sucursal ${esc(b.sucursal)}</div>` : ''}
-    ${b.nit ? `<div class="c">Céd. jurídica ${esc(b.nit)}</div>` : ''}${b.direccion ? `<div class="c">${esc(b.direccion)}</div>` : ''}${b.telefono ? `<div class="c">Tel. ${esc(b.telefono)}</div>` : ''}
+    ${b.nit ? `<div class="c">Céd. jurídica ${esc(b.nit)}</div>` : ''}${b.direccion ? `<div class="c">${esc(b.direccion)}</div>` : ''}${b.telefono ? `<div class="c">Tel. ${esc(b.telefono)}</div>` : ''}${b.web ? `<div class="c">${esc(b.web)}</div>` : ''}
     <hr>${f.fe && f.fe.clave ? `<div class="c" style="font-weight:600">${esc((FE_TIPO[f.fe.tipo] || 'Comprobante electrónico').toUpperCase())}</div><div class="c">No. ${esc(f.fe.consecutivo)}</div><div class="c" style="font-size:10.5px;word-break:break-all">Clave ${esc(claveFmt(f.fe.clave))}</div>${f.fe.ambiente === 'sandbox' ? '<div class="c" style="font-weight:600">DOCUMENTO DE PRUEBA · SIN VALOR FISCAL</div>' : ''}<div class="c">Interno ${esc(f.numero)}</div>` : `<div class="c" style="font-weight:600">${f.tipoDoc === 'consumo' ? 'CONSUMO INTERNO' : 'COMPROBANTE DE VENTA'}</div><div class="c">No. ${esc(f.numero)}</div>`}
     <div class="r"><span>${fdate(f.ts)}</span><span>${ftime(f.ts)}</span></div>
     <div class="r"><span>Cajero</span><span>${esc(f.cajero)}</span></div><div class="r"><span>Orden</span><span>${esc(tipo)}</span></div>
@@ -1391,7 +1391,7 @@ function receiptText(f) {
   const W = 32, b = f.negocio || S.neg;
   const c = s => { s = String(s); const p = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(p) + s; };
   const lr = (l, r) => { l = String(l); r = String(r); return l + ' '.repeat(Math.max(1, W - l.length - r.length)) + r; };
-  const L = [c((b.nombre || '').toUpperCase())]; if (b.sucursal) L.push(c('Sucursal ' + b.sucursal)); if (b.nit) L.push(c('Ced. juridica ' + b.nit)); if (b.direccion) L.push(c(b.direccion));
+  const L = [c((b.nombre || '').toUpperCase())]; if (b.sucursal) L.push(c('Sucursal ' + b.sucursal)); if (b.nit) L.push(c('Ced. juridica ' + b.nit)); if (b.direccion) L.push(c(b.direccion)); if (b.web) L.push(c(b.web));
   L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
   f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); });
   if (f.descuento) L.push('-'.repeat(W), lr('Antes de descuento', money(f.bruto)), lr('Descuento', '-' + money(f.descuento.monto)));
@@ -2206,7 +2206,8 @@ function viewAjustes() {
         <label class="field"><span>Cédula jurídica</span><input class="inp mono" id="ajNit" value="${esc(n.nit)}"></label>
         <label class="field" style="grid-column:1/-1"><span>Dirección</span><input class="inp" id="ajDir" value="${esc(n.direccion)}"></label>
         <label class="field"><span>Teléfono</span><input class="inp mono" id="ajTel" value="${esc(n.telefono)}"></label>
-        <label class="field"><span>Pie del comprobante</span><input class="inp" id="ajPie" value="${esc(n.pie)}"></label></div></div>`)}
+        <label class="field"><span>Pie del comprobante</span><input class="inp" id="ajPie" value="${esc(n.pie)}"></label>
+        <label class="field" style="grid-column:1"><span>Sitio web</span><input class="inp mono" id="ajWeb" value="${esc(n.web || '')}" placeholder="www.spankys.co.cr" autocapitalize="none" spellcheck="false"></label></div></div>`)}
       ${sec('sucursales', `<div class="sect" style="margin:0" id="ajSuc"></div>`)}
       ${sec('usuarios', `<div class="sect" style="margin:0" id="ajUsr"></div>`)}
       ${sec('ventas', `<div class="sect" style="margin:0"><h3>Ventas y PIN</h3><div class="grid2">
@@ -2292,7 +2293,7 @@ async function ajSave() {
   const v = id => $('#' + id).value.trim();
   const pin = v('ajPin'); if (!/^\d{4,6}$/.test(pin)) return toast('El PIN debe tener de 4 a 6 dígitos.');
   const iva = parseFloat(v('ajIva')); if (!(iva >= 0 && iva < 100)) return toast('Revise el porcentaje de IVA.');
-  const data = {moneda: v('ajMon') || '₡', nombre: v('ajNom') || "SPANKY'S", nit: v('ajNit'), direccion: v('ajDir'), telefono: v('ajTel'), pie: v('ajPie'), iva, pin,
+  const data = {moneda: v('ajMon') || '₡', nombre: v('ajNom') || "SPANKY'S", nit: v('ajNit'), direccion: v('ajDir'), telefono: v('ajTel'), web: v('ajWeb').replace(/^https?:\/\//i, '').replace(/\/$/, ''), pie: v('ajPie'), iva, pin,
     mult: {P: parseFloat(v('ajMP')) || .6, M: 1, G: parseFloat(v('ajMG')) || 1.5, F: parseFloat(v('ajMF')) || 2}};
   const g = id => ($('#' + id) ? $('#' + id).value.trim() : '');
   const fe = {activo: !!$('#feOn')?.checked, ambiente: g('feAmb') || 'sandbox', esServicio: g('feSrv') === '1', tarifaIVA: iva,
