@@ -600,7 +600,7 @@ const S = {
   cart: [], cliente: CLI_DEF(), pago: 'efectivo', recibido: '', tipo: 'llevar',
   cajero: ls.get('cajero', ''), busy: false,
   fq: '', fest: 'todas', fsel: null,
-  iq: '', ifil: 'todos', mcat: 'todos',
+  iq: '', ifil: 'todos', mcat: 'todos', itab: 'inv', ocfil: 'abiertas', ordenes: [], ocDraft: {}, ocCat: '',
   rep: {tab: 'ventas', suc: '*', per: 'hoy', from: dstr(new Date()), to: dstr(new Date()), data: null, loading: false},
   unlockAjustes: false, mres: null,
   me: null, uid: '', suc: ls.get('suc', '001'), sucursales: [SUC_DEF], usuarios: [],
@@ -928,7 +928,8 @@ function subSuc() {
   const ok = f => typeof f === 'function' && UNSUB.push(f);
   ok(refs.inv.onSnapshot(s => { S.inv = s.exists ? clone(s.data().items || {}) : {}; S.loaded.inv = true; refresh('inv'); }, onErr));
   ok(refs.cnt.onSnapshot(s => { S.next = s.exists ? (s.data().next || 1) : 1; refresh('cnt'); }, onErr));
-  S.puesto = ls.get('puesto.' + S.suc, ''); S.turnosAb = [];
+  S.puesto = ls.get('puesto.' + S.suc, ''); S.turnosAb = []; S.ordenes = [];
+  if (esSuper()) ok(db.collection(sp('ordenes')).orderBy('n', 'desc').limit(200).onSnapshot(s => { S.ordenes = s.docs.map(d => d.data()); refresh('oc'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('turnos')).where('estado', '==', 'abierto').onSnapshot(s => { S.turnosAb = s.docs.map(d => d.data()); refresh('caja'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('facturas')).orderBy('ts', 'desc').limit(300).onSnapshot(s => { S.facturas = s.docs.map(d => d.data()); S.loaded.fact = true; refresh('fact'); }, onErr));
   ok(db.collection(sp('comandas')).where('estado', 'in', ['pendiente', 'horno', 'lista']).limit(200).onSnapshot(s => {
@@ -951,7 +952,7 @@ async function seedDB() {
   S.seeding = true;
   try {
     const neg = await refs.neg.get(); if (!neg.exists) await refs.neg.set(SEED.negocio);
-    const inv = await refs.inv.get(); if (!inv.exists || !Object.keys(inv.data().items || {}).length) await refs.inv.set(SEED.inventario);
+    const inv = await refs.inv.get(); if (!inv.exists || !Object.keys(inv.data().items || {}).length) await refs.inv.set({...SEED.inventario, items: conCategoriasEjemplo(SEED.inventario.items)});
     await refs.menu.set(SEED.menu);
     const pr = await refs.promos.get(); if (!pr.exists) await refs.promos.set(SEED.promos);
     const c = await refs.cnt.get(); if (!c.exists) await refs.cnt.set({next: 1});
@@ -973,7 +974,7 @@ function refresh(kind) {
   else if (v === 'facturas') { renderFList(); renderFDet(); }
   else if (v === 'ajustes' && kind === 'fe' && !S.feCfgShown) { S.feCfgShown = true; viewAjustes(); }
   else if (v === 'ajustes' && (kind === 'usr' || kind === 'suc' || kind === 'all')) renderAjListas();
-  else if (v === 'inventario') renderInv();
+  else if (v === 'inventario') { if (kind === 'oc' && S.itab !== 'oc') { const p = document.querySelector('[data-act=itab][data-v=oc]'); if (p && esDueno()) viewInv(); return; } renderInv(); }
   else if (v === 'menu') renderMenu();
   if (v === 'venta' && kind === 'promos') renderTicket();
 }
@@ -1659,38 +1660,50 @@ async function anularFlow(numero) {
 
 /* ---------------- INVENTARIO ---------------- */
 function viewInv() {
+  const oc = S.itab === 'oc'; const nP = ocPend();
   main.innerHTML = `<section class="view">
     <div class="vhead"><h1>Inventario<small id="iSub"></small></h1>
-      <input class="inp" id="iQ" placeholder="Buscar ingrediente" style="max-width:220px" value="${esc(S.iq)}">
+      <div class="seg sm"><button data-act="itab" data-v="inv" aria-pressed="${!oc}">Existencias</button><button data-act="itab" data-v="oc" aria-pressed="${oc}">Órdenes de compra${nP && esDueno() ? ` <span class="pill warn" style="margin-left:4px">${nP}</span>` : ''}</button></div>
+      ${oc ? `${esSuper() ? '<button class="ghost sm" data-act="ocRec">Recibir orden</button><button class="primary sm" data-act="ocNew">+ Nueva orden</button>' : ''}`
+        : `<input class="inp" id="iQ" placeholder="Buscar ingrediente o categoría" style="max-width:240px" value="${esc(S.iq)}">
       <div class="seg sm" id="iFil"></div>
       <button class="ghost sm" data-act="mermaProd">Merma de producto</button>
-      ${esDueno() ? '<button class="primary sm" data-act="ingNew">+ Ingrediente</button>' : ''}</div>
+      ${esDueno() ? '<button class="primary sm" data-act="ingNew">+ Ingrediente</button>' : ''}`}</div>
     <div class="vbody" id="iBody"></div></section>`;
   renderInv();
 }
 function stState(i) { return i.stock <= 0 ? 'bad' : i.stock <= (i.minimo || 0) ? 'warn' : 'ok'; }
 function renderInv() {
   const b = $('#iBody'); if (!b) return;
+  if (S.itab === 'oc') return renderOC();
   const all = Object.entries(S.inv).map(([id, i]) => ({id, ...i})).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   const nb = all.filter(i => stState(i) === 'warn').length, na = all.filter(i => stState(i) === 'bad').length;
-  $('#iSub').textContent = `${S.sucursales.length > 1 ? sucAct().nombre + ' · ' : ''}${all.length} ingredientes · ${nb} bajo mínimo · ${na} agotados`;
-  $('#iFil').innerHTML = [['todos', 'Todos'], ['bajo', `Bajo mínimo ${nb + na ? '(' + (nb + na) + ')' : ''}`]].map(([k, l]) => `<button data-act="ifil" data-v="${k}" aria-pressed="${S.ifil === k}">${l}</button>`).join('');
+  const venc = all.map(i => ({i, v: vencInfo(i)})).filter(x => x.v && x.v.st !== 'ok').sort((a, b) => a.v.dias - b.v.dias); const nv = venc.length;
+  $('#iSub').textContent = `${S.sucursales.length > 1 ? sucAct().nombre + ' · ' : ''}${all.length} ingredientes · ${nb} bajo mínimo · ${na} agotados${nv ? ` · ${nv} por vencer` : ''}`;
+  const fl = $('#iFil'); if (fl) fl.innerHTML = [['todos', 'Todos'], ['bajo', `Bajo mínimo ${nb + na ? '(' + (nb + na) + ')' : ''}`], ['vence', `Por vencer ${nv ? '(' + nv + ')' : ''}`]].map(([k, l]) => `<button data-act="ifil" data-v="${k}" aria-pressed="${S.ifil === k}">${l}</button>`).join('');
   const q = S.iq.trim().toLowerCase();
-  const list = all.filter(i => (S.ifil === 'todos' || stState(i) !== 'ok') && (!q || i.nombre.toLowerCase().includes(q)));
+  const list = all.filter(i => (S.ifil === 'todos' || (S.ifil === 'vence' ? (vencInfo(i)?.st || 'ok') !== 'ok' : stState(i) !== 'ok')) && (!q || i.nombre.toLowerCase().includes(q) || catTxt(i).toLowerCase().includes(q)))
+    .sort((a, b) => S.ifil === 'vence' ? (vencInfo(a)?.dias ?? 1e9) - (vencInfo(b)?.dias ?? 1e9) : 0);
+  const aviso = nv ? `<div class="soporte-box" style="margin-bottom:10px;border-color:var(--warn,#c80)"><b>${venc.filter(x => x.v.st === 'bad').length ? 'Hay productos vencidos o' : 'Hay productos'} por vencer en los próximos ${DIAS_ALERTA} días</b>
+    <span>${venc.slice(0, 6).map(x => `${esc(x.i.nombre)}: <b class="${x.v.st}">${vencTxt(x.v.dias)}</b> (${fmtQty(x.v.lote.cant, x.i.unidad)}, ${fvence(x.v.lote.vence)})`).join(' · ')}${nv > 6 ? ` y ${nv - 6} más` : ''}</span>
+    <span class="note">Úselos primero. Lo vencido se saca con <b>Merma</b>, motivo “Vencido”.</span></div>` : '';
   if (!S.ready) { b.innerHTML = `<div class="empty">Cargando inventario…</div>`; return; }
   if (!all.length) { b.innerHTML = `<div class="empty">${ico('extra')}<b>Aún no hay ingredientes</b><span>${esDueno() ? 'Agregue la masa, salsa, quesos y demás insumos con su unidad de medida y existencia inicial.' : 'El dueño del negocio debe registrar los ingredientes.'}</span>${esDueno() ? '<button class="primary sm" data-act="ingNew">+ Ingrediente</button>' : ''}</div>`; return; }
   if (!list.length) { b.innerHTML = `<div class="empty"><b>Nada que mostrar con ese filtro</b></div>`; return; }
-  b.innerHTML = `<div class="tbl"><table><thead><tr><th>Ingrediente</th><th class="n">Existencia</th><th class="n">Mínimo</th><th>Nivel</th><th class="n">Costo</th><th class="n">Valor</th><th></th></tr></thead><tbody>
+  const sinCat = esDueno() && all.length && all.every(i => !i.cat) && all.some(i => CAT_EJEMPLO[i.id]);
+  b.innerHTML = aviso + (sinCat ? `<div class="note" style="margin-bottom:8px">Los ingredientes todavía no tienen categoría. <button class="ghost sm" data-act="catEj">Poner categorías de ejemplo</button></div>` : '') + `<div class="tbl"><table><thead><tr><th>Ingrediente</th><th title="Pide fecha de vencimiento al recibir">Vence</th><th class="n">Existencia</th><th class="n">Mínimo</th><th>Nivel</th><th class="n">Costo</th><th class="n">Valor</th><th></th></tr></thead><tbody>
     ${list.map(i => {
       const st = stState(i); const U = UNITS[i.unidad] || UNITS.unidad;
       const pct = Math.max(0, Math.min(1, i.stock / Math.max(1e-9, (i.minimo || 1) * 3)));
-      return `<tr><td><div class="ing-name">${esc(i.nombre)}</div></td>
+      const vi = vencInfo(i);
+      return `<tr><td><div class="ing-name">${esc(i.nombre)}</div>${i.cat ? `<div class="note">${esc(catTxt(i))}</div>` : ''}</td>
+        <td><label class="row" style="flex-wrap:nowrap;gap:6px;cursor:${esDueno() ? 'pointer' : 'default'}" title="${i.vence ? 'Pide fecha de vencimiento al recibir (mínimo ' + (+i.diasMin || DIAS_MIN_DEF) + ' días de vida)' : 'No pide fecha de vencimiento'}"><input type="checkbox" class="ivc" data-id="${esc(i.id)}" ${i.vence ? 'checked' : ''} ${esDueno() ? '' : 'disabled'} style="width:18px;height:18px">${vi ? `<span class="pill ${vi.st}" title="${vi.lotes.map(l => fmtQty(l.cant, i.unidad) + ' vence ' + fvence(l.vence)).join(' · ')}">${vi.st === 'ok' ? fvence(vi.lote.vence) : vencTxt(vi.dias)}</span>` : ''}</label></td>
         <td class="n ${st === 'ok' ? '' : st}">${fmtQty(i.stock, i.unidad)}</td><td class="n mute">${fmtQty(i.minimo || 0, i.unidad)}</td>
         <td><div class="row" style="flex-wrap:nowrap"><div class="meter ${st}"><i style="width:${(pct * 100).toFixed(0)}%"></i></div>${st === 'ok' ? '' : `<span class="pill ${st}">${st === 'bad' ? 'Agotado' : 'Bajo'}</span>`}</div></td>
         <td class="n mute">${i.costo ? money(i.costo * U.f) + '/' + U.big : '—'}</td><td class="n">${i.costo ? money(Math.max(0, i.stock) * i.costo) : '—'}</td>
         <td><div class="acts"><button class="primary sm" data-act="ingIn" data-id="${esc(i.id)}">Entrada</button><button class="ghost sm" data-act="ingCount" data-id="${esc(i.id)}">Conteo</button><button class="ghost sm" data-act="ingMerma" data-id="${esc(i.id)}">Merma</button><button class="ghost sm" data-act="ingEdit" data-id="${esc(i.id)}">Editar</button></div></td></tr>`;
     }).join('')}</tbody>
-    <tfoot><tr><td colspan="5">Valor total del inventario</td><td class="n">${money(all.reduce((a, i) => a + Math.max(0, i.stock) * (i.costo || 0), 0))}</td><td></td></tr></tfoot></table></div>`;
+    <tfoot><tr><td colspan="6">Valor total del inventario</td><td class="n">${money(all.reduce((a, i) => a + Math.max(0, i.stock) * (i.costo || 0), 0))}</td><td></td></tr></tfoot></table></div>`;
 }
 async function invMove(id, mode) {
   const i = S.inv[id]; if (!i) return;
@@ -1700,10 +1713,25 @@ async function invMove(id, mode) {
   const res = await dialog(`<h2>${mode === 'entrada' ? 'Entrada' : 'Conteo físico'} · ${esc(i.nombre)}<small>Existencia en sistema: ${fmtQty(i.stock, i.unidad)}</small></h2>
     <label class="field"><span>${mode === 'entrada' ? 'Cantidad que ingresa' : 'Existencia contada'} (${U.l})</span><input class="inp num" id="mvQ" inputmode="decimal" style="font-size:20px;height:52px"></label>
     ${mode === 'entrada' ? `<div class="quick">${quick.map(v => `<button data-act="mvAdd" data-v="${v}">+${nf(v)} ${U.l}</button>`).join('')}</div>` : `<div class="note" id="mvDiff">Escriba lo que contó en bodega; el sistema registra la diferencia.</div>`}
+    ${mode === 'entrada' && i.vence ? `<label class="field"><span>Fecha de vencimiento (mínimo ${+i.diasMin || DIAS_MIN_DEF} días de vida)</span><input class="inp" id="mvV" type="date" min="${hoyStr()}"></label>` : ''}
     <label class="field"><span>Nota</span><input class="inp" id="mvN" placeholder="${mode === 'entrada' ? 'Proveedor y número de factura de compra' : 'Ej. conteo de cierre semanal'}"></label>
     <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Guardar</button></div>`, '',
-    () => { const v = parseFloat($('#mvQ').value); if (!(v >= 0) || (mode === 'entrada' && !(v > 0))) { toast('Escriba una cantidad válida.'); return false; } return {v, nota: $('#mvN').value.trim()}; });
+    () => { const v = parseFloat($('#mvQ').value); if (!(v >= 0) || (mode === 'entrada' && !(v > 0))) { toast('Escriba una cantidad válida.'); return false; } const vence = $('#mvV')?.value || ''; if (mode === 'entrada' && i.vence && !vence) { toast('Escriba la fecha de vencimiento.'); return false; } if (mode === 'entrada' && vence && diasHasta(vence) < 0) { toast(`Ese producto ya está vencido (${fvence(vence)}): no puede ingresar.`); return false; } return {v, vence, nota: $('#mvN').value.trim()}; });
   if (!res) return;
+  if (mode === 'entrada') {
+    const ln = [{ing: id, cant: res.v, vence: res.vence}];
+    const rv = await revisarVencimientos(ln); if (!rv) return;
+    if (rv.aut) ln[0].aut = {por: rv.aut.por, motivo: rv.aut.motivo, ts: rv.aut.ts};
+    try {
+      await withLock(refs.inv, async () => {
+        const invS = await refs.inv.get(); const inv = clone(invS.data() || {items: {}}); if (!inv.items?.[id]) throw {code: 'gone'};
+        const movs = aplicarEntradas(inv, ln, {nota: res.nota}); await refs.inv.set(inv);
+        for (const m of movs) await S.db.collection(sp('movimientos')).add(m);
+      });
+      toast('Entrada registrada.');
+    } catch (e) { toast('No se pudo guardar el movimiento. Intente de nuevo.'); }
+    return;
+  }
   try {
     await withLock(refs.inv, async () => {
       const invS = await refs.inv.get(); const inv = clone(invS.data() || {items: {}}); const it = inv.items[id]; if (!it) throw {code: 'gone'};
@@ -1764,26 +1792,303 @@ async function mermaProducto() {
   } catch (e) { toast('No se pudo registrar la merma.'); }
 }
 
+/* ---------------- VENCIMIENTOS: lotes por fecha ----------------
+   Cada ingrediente con "requiere vencimiento" guarda sus entradas como lotes {cant, vence, oc}.
+   No se toca cada venta: lo que queda de cada lote se calcula desde la existencia, asumiendo que
+   se gasta primero lo que vence antes (lo más nuevo es lo que queda en bodega). */
+const DIAS_ALERTA = 15, DIAS_MIN_DEF = 30;
+const hoyStr = () => dstr(new Date());
+const diasHasta = d => Math.round((Date.parse(d + 'T12:00:00') - Date.parse(hoyStr() + 'T12:00:00')) / 864e5);
+function lotesVivos(it) {
+  let rest = Math.max(0, +it.stock || 0); const out = [];
+  for (const l of [...(it.lotes || [])].filter(l => l && l.vence).sort((a, b) => b.vence.localeCompare(a.vence))) {
+    if (rest <= 0) break;
+    const c = Math.min(+l.cant || 0, rest); if (c > 0) { out.push({...l, cant: r3(c)}); rest = r3(rest - c); }
+  }
+  return out.sort((a, b) => a.vence.localeCompare(b.vence));
+}
+function vencInfo(it) {
+  if (!it || !it.vence) return null;
+  const v = lotesVivos(it); if (!v.length) return null;
+  const d = diasHasta(v[0].vence);
+  return {lote: v[0], dias: d, st: d < 0 ? 'bad' : d <= DIAS_ALERTA ? 'warn' : 'ok', lotes: v};
+}
+const vencTxt = d => d < 0 ? `Vencido hace ${-d} ${-d === 1 ? 'día' : 'días'}` : d === 0 ? 'Vence hoy' : `Vence en ${d} ${d === 1 ? 'día' : 'días'}`;
+const fvence = d => d ? d.split('-').reverse().join('/') : '';
+const catsInv = () => [...new Set(Object.values(S.inv).map(i => (i.cat || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+const subsInv = c => [...new Set(Object.values(S.inv).filter(i => !c || i.cat === c).map(i => (i.sub || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+const catTxt = i => [i.cat, i.sub].filter(Boolean).join(' › ');
+// Ejemplo de categorías para el menú inicial y la plantilla de Excel.
+const CAT_EJEMPLO = {masa: ['Masas y harinas', 'Masa', 1], salsa: ['Salsas', 'Tomate', 1], mozzarella: ['Lácteos', 'Quesos', 1], pepperoni: ['Carnes', 'Embutidos', 1], jamon: ['Carnes', 'Embutidos', 1], salchicha: ['Carnes', 'Embutidos', 1], tocino: ['Carnes', 'Embutidos', 1], pollo: ['Carnes', 'Pollo', 1], alitas: ['Carnes', 'Pollo', 1], pina: ['Frutas y vegetales', 'Frutas', 1], hongos: ['Frutas y vegetales', 'Vegetales', 1], chile: ['Frutas y vegetales', 'Vegetales', 1], cebolla: ['Frutas y vegetales', 'Vegetales', 1], albahaca: ['Frutas y vegetales', 'Vegetales', 1], tomate: ['Frutas y vegetales', 'Vegetales', 1], aceituna: ['Abarrotes', 'Conservas', 1], bbq: ['Salsas', 'Aderezos', 1], mantequilla: ['Lácteos', 'Mantequilla', 1], 'caja-p': ['Empaque', 'Cajas', 0], 'caja-m': ['Empaque', 'Cajas', 0], 'caja-g': ['Empaque', 'Cajas', 0], 'caja-f': ['Empaque', 'Cajas', 0], lata: ['Bebidas', 'Gaseosas', 1], gaseosa2l: ['Bebidas', 'Gaseosas', 1], agua: ['Bebidas', 'Agua', 1]};
+function conCategoriasEjemplo(items) {
+  const out = clone(items || {});
+  for (const [k, it] of Object.entries(out)) { const c = CAT_EJEMPLO[k]; if (c && !it.cat) Object.assign(it, {cat: c[0], sub: c[1], vence: !!c[2], diasMin: DIAS_MIN_DEF}); }
+  return out;
+}
+async function categoriasEjemplo() {
+  if (!(await confirmBox('Categorías de ejemplo', 'Se pondrá categoría, subcategoría y “requiere vencimiento” a los ingredientes del menú de prueba que todavía no tienen categoría. Después se puede cambiar en Editar.', 'Aplicar'))) return;
+  try {
+    await withLock(refs.inv, async () => { const s = await refs.inv.get(); const inv = clone(s.data() || {items: {}}); inv.items = conCategoriasEjemplo(inv.items); await refs.inv.set(inv); });
+    await enOtrasSucursales(items => { const n = conCategoriasEjemplo(items); let ch = false; for (const k of Object.keys(items)) if (JSON.stringify(n[k]) !== JSON.stringify(items[k])) { items[k] = n[k]; ch = true; } return ch; });
+    toast('Categorías aplicadas.');
+  } catch (e) { console.warn(e); toast('No se pudieron aplicar.'); }
+}
+async function toggleVence(id, on) {
+  if (!esDueno()) return renderInv();
+  try {
+    const f = it => { it.vence = on; if (on && !it.diasMin) it.diasMin = DIAS_MIN_DEF; };
+    await withLock(refs.inv, async () => { const s = await refs.inv.get(); const inv = clone(s.data() || {items: {}}); const it = inv.items[id]; if (!it) throw {code: 'gone'}; f(it); await refs.inv.set(inv); });
+    await enOtrasSucursales(items => { if (!items[id]) return false; f(items[id]); });
+    toast(on ? 'Ahora pide fecha de vencimiento al recibirlo.' : 'Ya no pide fecha de vencimiento.');
+  } catch { toast('No se pudo cambiar.'); renderInv(); }
+}
+// Ingreso con vida corta: se autoriza con el PIN de supervisor y queda registrado quién y por qué.
+async function autorizarCorta(cortas) {
+  const res = await dialog(`<h2>Producto con poca vida<small>Vence antes del mínimo permitido para recibir</small></h2>
+    <div class="tbl"><table><thead><tr><th>Ingrediente</th><th>Vence</th><th class="n">Le quedan</th><th class="n">Mínimo</th></tr></thead><tbody>
+    ${cortas.map(c => `<tr><td>${esc(c.nombre)}</td><td>${fvence(c.vence)}</td><td class="n bad">${c.dias} ${c.dias === 1 ? 'día' : 'días'}</td><td class="n">${c.min} días</td></tr>`).join('')}</tbody></table></div>
+    <p class="note" style="margin:0">Lo normal es <b>no recibirlo</b> y devolverlo al proveedor. Si de todas formas se acepta, necesita la autorización del supervisor y queda registrada.</p>
+    <label class="field"><span>Motivo de la autorización</span><input class="inp" id="auM" placeholder="Ej. el proveedor no tiene otro lote; se usa esta semana"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">No recibir</button><button class="danger" data-act="m-ok">Autorizar con PIN</button></div>`, '',
+    () => { const m = $('#auM').value.trim(); if (m.length < 5) { toast('Escriba el motivo de la autorización.'); return false; } return m; });
+  if (!res) return null;
+  if (!(await askPin('Autorizar ingreso con poca vida'))) return null;
+  return {por: S.me?.nombre || cajeroActual(), usuario: S.me?.usuario || '', motivo: res, ts: Date.now(), pin: true};
+}
+// Revisa las fechas de lo que entra: vencido no entra; con menos vida que el mínimo pide autorización.
+async function revisarVencimientos(lineas) {
+  const cortas = [];
+  for (const l of lineas) {
+    const it = S.inv[l.ing]; if (!it || !it.vence || !(l.cant > 0)) continue;
+    if (!l.vence) { toast(`Falta la fecha de vencimiento de ${it.nombre}.`); return false; }
+    const d = diasHasta(l.vence);
+    if (d < 0) { toast(`${it.nombre} ya está vencido (${fvence(l.vence)}): no puede ingresar al inventario.`); return false; }
+    const min = +it.diasMin || DIAS_MIN_DEF;
+    if (d < min) cortas.push({ing: l.ing, nombre: it.nombre, vence: l.vence, dias: d, min});
+  }
+  if (!cortas.length) return {aut: null};
+  const aut = await autorizarCorta(cortas);
+  if (!aut) return false;
+  return {aut: {...aut, items: cortas.map(c => ({ing: c.ing, nombre: c.nombre, vence: c.vence, dias: c.dias, min: c.min}))}};
+}
+// Suma al inventario (y a sus lotes) lo que entra. Devuelve los movimientos a registrar.
+function aplicarEntradas(inv, lineas, extra) {
+  const movs = []; const ts = Date.now();
+  for (const l of lineas) {
+    const it = inv.items[l.ing]; if (!it || !(l.cant > 0)) continue;
+    const antes = it.stock;
+    if (it.vence && l.vence) {
+      const vivos = lotesVivos(it);
+      vivos.push({id: ts.toString(36) + Math.random().toString(36).slice(2, 5), cant: r3(l.cant), vence: l.vence, ts, ...(extra.oc ? {oc: extra.oc} : {}), ...(l.aut ? {aut: true} : {})});
+      it.lotes = vivos;
+    }
+    it.stock = r3(antes + l.cant);
+    movs.push({tipo: 'entrada', ing: l.ing, nombre: it.nombre, unidad: it.unidad, cantidad: r3(l.cant), antes, despues: it.stock, nota: extra.nota || '', ...(extra.oc ? {oc: extra.oc} : {}), ...(l.vence ? {vence: l.vence} : {}), ...(l.aut ? {autorizacion: l.aut} : {}), ts, cajero: cajeroActual()});
+  }
+  return movs;
+}
+
+/* ---------------- ÓRDENES DE COMPRA ---------------- */
+const OC_EST = {pendiente: ['Por aprobar', 'warn'], aprobada: ['Aprobada', 'ok'], parcial: ['Recibida en parte', 'warn'], recibida: ['Recibida', 'ok'], cerrada: ['Cerrada con faltante', 'mute'], anulada: ['Anulada', 'bad']};
+const ocPill = e => { const x = OC_EST[e] || [e, 'mute']; return `<span class="pill ${x[1]}">${x[0]}</span>`; };
+const ocAbierta = o => ['aprobada', 'parcial'].includes(o.estado);
+const ocPend = () => S.ordenes.filter(o => o.estado === 'pendiente').length;
+const qBig = (q, u) => { const U = UNITS[u] || UNITS.unidad; return u === 'unidad' ? nf(q, 0) + ' u' : nf(q / U.f, 2) + ' ' + U.big; };
+function renderOC() {
+  const b = $('#iBody'); if (!b) return;
+  const nP = ocPend();
+  $('#iSub').textContent = `${S.sucursales.length > 1 ? sucAct().nombre + ' · ' : ''}${S.ordenes.filter(ocAbierta).length} por recibir · ${nP} por aprobar`;
+  const f = S.ocfil || 'abiertas';
+  const list = S.ordenes.filter(o => f === 'todas' || ['pendiente', 'aprobada', 'parcial'].includes(o.estado));
+  const fil = `<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px"><div class="seg sm">${[['abiertas', 'Abiertas'], ['todas', 'Todas']].map(([k, l]) => `<button data-act="ocfil" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join('')}</div>
+    ${esDueno() && nP ? `<span class="pill warn">${nP} ${nP === 1 ? 'orden espera' : 'órdenes esperan'} su aprobación</span>` : ''}</div>`;
+  if (!list.length) { b.innerHTML = fil + `<div class="empty">${ico('extra')}<b>${f === 'todas' ? 'Aún no hay órdenes de compra' : 'No hay órdenes abiertas'}</b><span>La orden de compra se arma con lo que hay que pedir al proveedor. Cuando llega el pedido se recibe con su número y el inventario se carga solo.</span>${esSuper() ? '<button class="primary sm" data-act="ocNew">+ Nueva orden de compra</button>' : ''}</div>`; return; }
+  b.innerHTML = fil + `<div class="tbl"><table><thead><tr><th>Número</th><th>Fecha</th><th>Proveedor</th><th>Categorías</th><th class="n">Líneas</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${list.map(o => `<tr><td class="mono"><b>${esc(o.numero)}</b></td><td>${fdate(o.creado)}</td><td>${esc(o.proveedor || '—')}</td><td class="mute">${esc((o.cats || []).join(', ') || '—')}</td><td class="n">${(o.lineas || []).length}</td><td>${ocPill(o.estado)}</td>
+      <td><div class="acts">${esDueno() && o.estado === 'pendiente' ? `<button class="primary sm" data-act="ocVer" data-id="${esc(o.numero)}">Revisar y aprobar</button>` : ''}${esSuper() && ocAbierta(o) ? `<button class="primary sm" data-act="ocRec" data-id="${esc(o.numero)}">Recibir</button>` : ''}<button class="ghost sm" data-act="ocVer" data-id="${esc(o.numero)}">Ver</button></div></td></tr>`).join('')}</tbody></table></div>`;
+}
+function ocLinesHTML() {
+  const c = S.ocCat || '';
+  const items = Object.entries(S.inv).map(([id, i]) => ({id, ...i})).filter(i => !c || i.cat === c || (c === '-' && !i.cat)).sort((a, b) => catTxt(a).localeCompare(catTxt(b), 'es') || a.nombre.localeCompare(b.nombre, 'es'));
+  if (!items.length) return '<div class="note">No hay ingredientes en esa categoría.</div>';
+  return `<div class="tbl" style="max-height:330px;overflow:auto"><table><thead><tr><th>Ingrediente</th><th>Categoría</th><th class="n">Existencia</th><th class="n">Mínimo</th><th class="n" style="width:130px">Pedir</th></tr></thead><tbody>
+    ${items.map(i => { const U = UNITS[i.unidad] || UNITS.unidad; const st = stState(i); return `<tr><td>${esc(i.nombre)}${i.vence ? ' <span class="pill mute" title="Pide fecha de vencimiento al recibir">vence</span>' : ''}</td><td class="mute">${esc(catTxt(i) || 'Sin categoría')}</td>
+      <td class="n ${st === 'ok' ? '' : st}">${fmtQty(i.stock, i.unidad)}</td><td class="n mute">${fmtQty(i.minimo || 0, i.unidad)}</td>
+      <td class="n"><div class="row" style="flex-wrap:nowrap;justify-content:flex-end;gap:4px"><input class="inp num ocq" data-id="${esc(i.id)}" inputmode="decimal" style="width:84px;height:36px" value="${S.ocDraft[i.id] || ''}"><span class="mute" style="width:22px">${U.big}</span></div></td></tr>`; }).join('')}</tbody></table></div>`;
+}
+const ocResumen = () => { const n = Object.values(S.ocDraft).filter(v => parseFloat(v) > 0).length; return n ? `<b>${n}</b> ${n === 1 ? 'producto' : 'productos'} en la orden` : 'Escriba la cantidad a pedir en cada producto.'; };
+async function ocNueva() {
+  if (!esSuper()) return;
+  S.ocDraft = {}; S.ocCat = '';
+  const cats = catsInv(); const provs = [...new Set(S.ordenes.map(o => o.proveedor).filter(Boolean))];
+  const res = await dialog(`<h2>Nueva orden de compra<small>${esc(sucAct().nombre)} · ${esDueno() ? 'queda aprobada al crearla' : 'el dueño la debe aprobar'}</small></h2>
+    <div class="grid2"><label class="field"><span>Proveedor</span><input class="inp" id="ocP" list="ocProvs" placeholder="Nombre del proveedor"><datalist id="ocProvs">${provs.map(p => `<option value="${esc(p)}">`).join('')}</datalist></label>
+      <label class="field"><span>Categoría</span><select class="inp" id="ocCat"><option value="">Todas las categorías</option>${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}${Object.values(S.inv).some(i => !i.cat) ? '<option value="-">Sin categoría</option>' : ''}</select></label></div>
+    <div id="ocLines">${ocLinesHTML()}</div>
+    <div class="note" id="ocRes">${ocResumen()}</div>
+    <label class="field"><span>Nota (opcional)</span><input class="inp" id="ocN" placeholder="Ej. entregar el martes en la mañana"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">${esDueno() ? 'Crear orden' : 'Enviar a aprobación'}</button></div>`, 'wide',
+    () => {
+      const proveedor = $('#ocP').value.trim(); if (!proveedor) { toast('Escriba el proveedor.'); return false; }
+      const lineas = Object.entries(S.ocDraft).map(([ing, v]) => ({ing, q: parseFloat(String(v).replace(',', '.'))})).filter(l => l.q > 0 && S.inv[l.ing])
+        .map(l => { const it = S.inv[l.ing]; const U = UNITS[it.unidad] || UNITS.unidad; return {ing: l.ing, nombre: it.nombre, unidad: it.unidad, cat: it.cat || '', sub: it.sub || '', cant: r3(l.q * U.f), recibido: 0}; });
+      if (!lineas.length) { toast('Agregue al menos un producto con su cantidad.'); return false; }
+      return {proveedor, lineas, nota: $('#ocN').value.trim()};
+    });
+  if (!res) return;
+  try {
+    const cref = S.db.doc(sp('datos/contador_oc')); let numero = '';
+    await withLock(cref, async () => {
+      const c = await cref.get(); const n = (c.exists ? c.data().next || 1 : 1);
+      numero = `OC-${sucAct().serie || 'A'}-${String(n).padStart(4, '0')}`;
+      const ahora = Date.now();
+      const doc = {numero, n, sucursal: S.suc, proveedor: res.proveedor, nota: res.nota, lineas: res.lineas, cats: [...new Set(res.lineas.map(l => l.cat).filter(Boolean))],
+        estado: esDueno() ? 'aprobada' : 'pendiente', creado: ahora, creadoPor: S.me?.nombre || cajeroActual(), recepciones: [],
+        ...(esDueno() ? {aprobado: {por: S.me?.nombre || '', ts: ahora}} : {})};
+      await S.db.doc(sp('ordenes/' + numero)).set(doc);
+      await cref.set({next: n + 1});
+    });
+    toast(esDueno() ? `Orden ${numero} creada y aprobada.` : `Orden ${numero} enviada al dueño para aprobar.`);
+  } catch (e) { console.warn(e); toast(e && e.code === 'permission-denied' ? 'Firebase no lo permitió: publique las reglas nuevas.' : 'No se pudo crear la orden.'); }
+}
+function ocDetalleHTML(o) {
+  const lin = (o.lineas || []).map(l => { const pend = Math.max(0, r3(l.cant - (l.recibido || 0))); return `<tr><td>${esc(l.nombre)}<div class="note">${esc([l.cat, l.sub].filter(Boolean).join(' › '))}</div></td><td class="n">${qBig(l.cant, l.unidad)}</td><td class="n">${qBig(l.recibido || 0, l.unidad)}</td><td class="n ${pend > 0 && o.estado !== 'pendiente' ? 'warn' : 'mute'}">${qBig(pend, l.unidad)}</td></tr>`; }).join('');
+  const rec = (o.recepciones || []).map(r => `<div class="soporte-box" style="gap:4px"><b>${fdt(r.ts)} · recibió ${esc(r.por || '')}</b>
+      <span>${r.lineas.map(l => `${esc(l.nombre)}: ${qBig(l.cant, l.unidad)}${l.vence ? ' · vence ' + fvence(l.vence) : ''}`).join('<br>')}</span>
+      ${r.autorizacion ? `<span class="bad">Autorizado con poca vida por ${esc(r.autorizacion.por)} (PIN de supervisor): ${esc(r.autorizacion.motivo)}</span>` : ''}${r.nota ? `<span class="note">${esc(r.nota)}</span>` : ''}</div>`).join('');
+  return `<div class="row" style="gap:8px;flex-wrap:wrap">${ocPill(o.estado)}<span class="note">Creada ${fdt(o.creado)} por ${esc(o.creadoPor || '')}${o.aprobado ? ' · aprobada por ' + esc(o.aprobado.por) + ' el ' + fdt(o.aprobado.ts) : ''}${o.anulada ? ' · anulada por ' + esc(o.anulada.por) + ': ' + esc(o.anulada.motivo) : ''}${o.cerrada ? ' · cerrada por ' + esc(o.cerrada.por) + ': ' + esc(o.cerrada.motivo) : ''}</span></div>
+    ${o.nota ? `<p class="note" style="margin:0">Nota: ${esc(o.nota)}</p>` : ''}
+    <div class="tbl"><table><thead><tr><th>Ingrediente</th><th class="n">Pedido</th><th class="n">Recibido</th><th class="n">Pendiente</th></tr></thead><tbody>${lin}</tbody></table></div>
+    ${rec ? `<div class="field"><span>Recepciones</span><div style="display:grid;gap:8px">${rec}</div></div>` : ''}`;
+}
+async function ocVer(numero) {
+  const o = S.ordenes.find(x => x.numero === numero); if (!o) return;
+  const btns = [];
+  if (esDueno() && o.estado === 'pendiente') btns.push('<button class="danger left" data-act="m-val" data-v="rechazar">Rechazar</button>', '<button class="primary" data-act="m-val" data-v="aprobar">Aprobar</button>');
+  if (!esDueno() && esSuper() && o.estado === 'pendiente') btns.push('<button class="danger left" data-act="m-val" data-v="anular">Anular</button>');
+  if (esSuper() && o.estado === 'aprobada' && !(o.recepciones || []).length) btns.push('<button class="danger left" data-act="m-val" data-v="anular">Anular</button>');
+  if (esSuper() && o.estado === 'parcial') btns.push('<button class="ghost left" data-act="m-val" data-v="cerrar">Cerrar con faltante</button>');
+  if (esSuper() && ocAbierta(o)) btns.push('<button class="primary" data-act="m-val" data-v="recibir">Recibir</button>');
+  btns.push('<button class="ghost" data-act="m-val" data-v="imprimir">Imprimir</button>', '<button class="ghost" data-act="m-cancel">Cerrar</button>');
+  const r = await dialog(`<h2>${esc(o.numero)}<small>${esc(o.proveedor || '')} · ${esc(sucOf(o.sucursal || S.suc).nombre)}</small></h2>${ocDetalleHTML(o)}<div class="row-actions">${btns.join('')}</div>`, 'wide');
+  if (r === 'recibir') return ocRecibir(numero);
+  if (r === 'imprimir') return printDoc(ocImprimirHTML(o), false);
+  if (r === 'aprobar') return ocCambiar(numero, 'aprobada', {aprobado: {por: S.me?.nombre || '', ts: Date.now()}}, `Orden ${numero} aprobada.`);
+  if (r === 'rechazar' || r === 'anular' || r === 'cerrar') {
+    const m = await dialog(`<h2>${r === 'cerrar' ? 'Cerrar con faltante' : r === 'rechazar' ? 'Rechazar orden' : 'Anular orden'} ${esc(numero)}</h2>
+      ${r === 'cerrar' ? '<p class="note" style="margin:0">Lo que falta ya no se va a recibir. Lo recibido queda en el inventario.</p>' : ''}
+      <label class="field"><span>Motivo</span><input class="inp" id="ocMot"></label>
+      <div class="row-actions"><button class="ghost" data-act="m-cancel">Volver</button><button class="danger" data-act="m-ok">Confirmar</button></div>`, '',
+      () => { const v = $('#ocMot').value.trim(); if (v.length < 3) { toast('Escriba el motivo.'); return false; } return v; });
+    if (!m) return;
+    const info = {por: S.me?.nombre || cajeroActual(), motivo: m, ts: Date.now()};
+    return r === 'cerrar' ? ocCambiar(numero, 'cerrada', {cerrada: info}, `Orden ${numero} cerrada.`) : ocCambiar(numero, 'anulada', {anulada: info}, `Orden ${numero} ${r === 'rechazar' ? 'rechazada' : 'anulada'}.`);
+  }
+}
+async function ocCambiar(numero, estado, extra, msg) {
+  try { await S.db.doc(sp('ordenes/' + numero)).update({estado, ...extra}); toast(msg); }
+  catch (e) { console.warn(e); toast(e && e.code === 'permission-denied' ? 'Firebase no lo permitió.' : 'No se pudo guardar.'); }
+}
+function ocImprimirHTML(o) {
+  return `<div class="c" style="font-weight:700;font-size:15px">${esc(S.neg.nombre || "SPANKY'S")}</div><div class="c">ORDEN DE COMPRA ${esc(o.numero)}</div><div class="c">${fdt(o.creado)} · ${esc(sucOf(o.sucursal || S.suc).nombre)}</div><hr>
+    <div>Proveedor: <b>${esc(o.proveedor || '')}</b></div>${o.nota ? `<div>Nota: ${esc(o.nota)}</div>` : ''}<hr>
+    ${(o.lineas || []).map(l => `<div class="r"><span>${esc(l.nombre)}</span><span>${qBig(l.cant, l.unidad)}</span></div>`).join('')}<hr>
+    <div>Hecha por: ${esc(o.creadoPor || '')}</div>${o.aprobado ? `<div>Aprobada por: ${esc(o.aprobado.por)}</div>` : '<div>PENDIENTE DE APROBACIÓN</div>'}`;
+}
+async function ocRecibir(numero) {
+  if (!esSuper()) return;
+  if (!numero) {
+    const abiertas = S.ordenes.filter(ocAbierta);
+    const n = await dialog(`<h2>Recibir orden de compra<small>Escriba el número que viene en el pedido</small></h2>
+      <label class="field"><span>Número de orden</span><input class="inp mono" id="rcN" list="rcList" autocapitalize="characters" placeholder="OC-${esc(sucAct().serie || 'A')}-0001" style="font-size:18px;height:50px"><datalist id="rcList">${abiertas.map(o => `<option value="${esc(o.numero)}">${esc(o.proveedor || '')}</option>`).join('')}</datalist></label>
+      ${abiertas.length ? `<div class="note">Abiertas: ${abiertas.map(o => `<b class="mono">${esc(o.numero)}</b> (${esc(o.proveedor || '')})`).join(', ')}</div>` : '<div class="note">No hay órdenes aprobadas pendientes de recibir.</div>'}
+      <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Buscar</button></div>`, '',
+      () => {
+        let v = $('#rcN').value.trim().toUpperCase().replace(/\s+/g, ''); if (/^\d+$/.test(v)) v = `OC-${sucAct().serie || 'A'}-${v.padStart(4, '0')}`;
+        const o = S.ordenes.find(x => x.numero === v);
+        if (!o) { toast('No existe esa orden en esta sucursal.'); return false; }
+        if (o.estado === 'pendiente') { toast('Esa orden todavía no está aprobada por el dueño.'); return false; }
+        if (!ocAbierta(o)) { toast(`Esa orden ya está ${OC_EST[o.estado]?.[0].toLowerCase() || o.estado}.`); return false; }
+        return v;
+      });
+    if (!n) return; numero = n;
+  }
+  const o = S.ordenes.find(x => x.numero === numero); if (!o || !ocAbierta(o)) return;
+  const filas = (o.lineas || []).map((l, k) => ({...l, k, pend: Math.max(0, r3(l.cant - (l.recibido || 0))), it: S.inv[l.ing]})).filter(l => l.pend > 0);
+  const res = await dialog(`<h2>Recibir ${esc(numero)}<small>${esc(o.proveedor || '')} · escriba lo que llegó</small></h2>
+    <div class="row" style="justify-content:space-between"><span class="note">Si llegó todo, toque <b>Todo completo</b>. Si llegó una parte, la orden queda abierta con lo pendiente.</span><button class="ghost sm" data-act="rcTodo">Todo completo</button></div>
+    <div class="tbl"><table><thead><tr><th>Ingrediente</th><th class="n">Pendiente</th><th class="n" style="width:130px">Llegó</th><th style="width:160px">Vence</th></tr></thead><tbody>
+    ${filas.map(l => { const U = UNITS[l.unidad] || UNITS.unidad; const pide = !!(l.it && l.it.vence); return `<tr><td>${esc(l.nombre)}${pide ? `<div class="note">Mínimo ${+l.it.diasMin || DIAS_MIN_DEF} días de vida</div>` : ''}</td><td class="n">${qBig(l.pend, l.unidad)}</td>
+      <td class="n"><div class="row" style="flex-wrap:nowrap;justify-content:flex-end;gap:4px"><input class="inp num rcq" data-k="${l.k}" data-p="${l.unidad === 'unidad' ? l.pend : r3(l.pend / U.f)}" inputmode="decimal" style="width:84px;height:36px"><span class="mute" style="width:22px">${U.big}</span></div></td>
+      <td>${pide ? `<input class="inp rcv" data-k="${l.k}" type="date" min="${hoyStr()}" style="height:36px">` : '<span class="mute">No aplica</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+    <label class="field"><span>Nota (opcional)</span><input class="inp" id="rcNota" placeholder="Ej. factura del proveedor 12345"></label>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Recibir e ingresar al inventario</button></div>`, 'wide',
+    () => {
+      const lineas = [];
+      for (const l of filas) {
+        const inp = document.querySelector(`.rcq[data-k="${l.k}"]`); const v = parseFloat((inp?.value || '').replace(',', '.')) || 0;
+        if (v < 0) { toast('Las cantidades no pueden ser negativas.'); return false; }
+        const U = UNITS[l.unidad] || UNITS.unidad; const cant = r3(v * U.f);
+        if (cant > l.pend + 1e-6) { toast(`De ${l.nombre} llegó más de lo pendiente en la orden. Revise la cantidad.`); return false; }
+        const vence = document.querySelector(`.rcv[data-k="${l.k}"]`)?.value || '';
+        if (cant > 0 && l.it && l.it.vence) {
+          if (!vence) { toast(`Escriba la fecha de vencimiento de ${l.nombre}.`); return false; }
+          if (diasHasta(vence) < 0) { toast(`${l.nombre} ya está vencido (${fvence(vence)}): no puede ingresar al inventario. Devuélvalo al proveedor.`); return false; }
+        }
+        if (cant > 0) lineas.push({k: l.k, ing: l.ing, nombre: l.nombre, unidad: l.unidad, cant, ...(vence ? {vence} : {})});
+      }
+      if (!lineas.length) { toast('Escriba lo que llegó, o toque Todo completo.'); return false; }
+      return {lineas, nota: $('#rcNota').value.trim()};
+    });
+  if (!res) return;
+  const rv = await revisarVencimientos(res.lineas); if (!rv) return;
+  if (rv.aut) for (const l of res.lineas) if (rv.aut.items.some(c => c.ing === l.ing)) l.aut = {por: rv.aut.por, motivo: rv.aut.motivo, ts: rv.aut.ts};
+  try {
+    await withLock(refs.inv, async () => {
+      const g = await refs.inv.get(); const inv = clone(g.data() || {items: {}}); inv.items = inv.items || {};
+      const movs = aplicarEntradas(inv, res.lineas, {oc: numero, nota: `${numero} · ${o.proveedor || ''}${res.nota ? ' · ' + res.nota : ''}`});
+      await refs.inv.set(inv);
+      for (const m of movs) await S.db.collection(sp('movimientos')).add(m);
+    });
+    const oref = S.db.doc(sp('ordenes/' + numero));
+    await withLock(oref, async () => {
+      const g = await oref.get(); const od = g.data(); const lin = clone(od.lineas || []);
+      for (const l of res.lineas) if (lin[l.k]) lin[l.k].recibido = r3((lin[l.k].recibido || 0) + l.cant);
+      const completa = lin.every(l => (l.recibido || 0) >= l.cant - 1e-6);
+      const rec = {ts: Date.now(), por: S.me?.nombre || cajeroActual(), nota: res.nota, lineas: res.lineas.map(({k, aut, ...x}) => x), ...(rv.aut ? {autorizacion: rv.aut} : {})};
+      await oref.update({lineas: lin, estado: completa ? 'recibida' : 'parcial', recepciones: [...(od.recepciones || []), rec]});
+      toast(completa ? `Orden ${numero} recibida completa. Inventario actualizado.` : `Recibido en parte. La orden ${numero} queda abierta con lo pendiente.`);
+    });
+  } catch (e) { console.warn(e); toast(e && e.code === 'permission-denied' ? 'Firebase no lo permitió: publique las reglas nuevas.' : 'No se pudo registrar la recepción. Revise el internet.'); }
+}
+
 async function ingEdit(id) {
-  const isNew = !id; const i = isNew ? {nombre: '', unidad: 'g', stock: 0, minimo: 0, costo: 0} : S.inv[id]; if (!i) return;
+  const isNew = !id; const i = isNew ? {nombre: '', unidad: 'g', stock: 0, minimo: 0, costo: 0, cat: '', sub: '', vence: false, diasMin: DIAS_MIN_DEF} : S.inv[id]; if (!i) return;
   const usedBy = isNew ? [] : S.productos.filter(p => Object.values(p.receta || {}).some(r => r[id] > 0)).map(p => p.nombre);
   const unitOpts = Object.entries(UNITS).map(([k, u]) => `<option value="${k}" ${i.unidad === k ? 'selected' : ''}>${k === 'unidad' ? 'Unidades' : k === 'g' ? 'Gramos (g)' : 'Mililitros (ml)'}</option>`).join('');
   const U = UNITS[i.unidad] || UNITS.unidad;
   const res = await dialog(`<h2>${isNew ? 'Nuevo ingrediente' : 'Editar ' + esc(i.nombre)}</h2>
     <label class="field"><span>Nombre</span><input class="inp" id="igN" value="${esc(i.nombre)}" ${esDueno() ? '' : 'disabled'}></label>
     <div class="grid2">
+      <label class="field"><span>Categoría</span><input class="inp" id="igCat" list="igCats" value="${esc(i.cat || '')}" placeholder="Ej. Lácteos" ${esDueno() ? '' : 'disabled'}><datalist id="igCats">${catsInv().map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label class="field"><span>Subcategoría</span><input class="inp" id="igSub" list="igSubs" value="${esc(i.sub || '')}" placeholder="Ej. Quesos" ${esDueno() ? '' : 'disabled'}><datalist id="igSubs">${subsInv().map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label class="check" style="grid-column:1/-1"><input type="checkbox" id="igV" ${i.vence ? 'checked' : ''} ${esDueno() ? '' : 'disabled'}><span>Requiere fecha de vencimiento<br><span class="note">Al recibirlo se anota el vencimiento y el sistema avisa ${DIAS_ALERTA} días antes de que venza.</span></span></label>
+      <label class="field"><span>Días mínimos de vida al recibir</span><input class="inp num" id="igD" inputmode="numeric" value="${+i.diasMin || DIAS_MIN_DEF}" ${esDueno() ? '' : 'disabled'}></label>
+      <div class="note" style="align-self:end">Si llega con menos días de vida, no entra al inventario salvo con autorización del supervisor.</div>
       <label class="field"><span>Unidad de medida</span><select class="inp" id="igU" ${isNew ? '' : 'disabled'}>${unitOpts}</select></label>
       <label class="field"><span>Mínimo (alerta) <i id="igUl1" style="font-style:normal">${U.l}</i></span><input class="inp num" id="igMin" inputmode="decimal" value="${i.minimo || 0}"></label>
       <label class="field"><span>Costo por <i id="igUl2" style="font-style:normal">${U.big}</i> (${esc(sym())})</span><input class="inp num" id="igC" inputmode="decimal" value="${i.costo ? r2(i.costo * U.f) : ''}"></label>
       ${isNew ? `<label class="field"><span>Existencia inicial <i id="igUl3" style="font-style:normal">${U.l}</i></span><input class="inp num" id="igS" inputmode="decimal" value="0"></label>` : ''}
     </div>
-    ${S.sucursales.length > 1 ? `<p class="note" style="margin:0">${isNew ? 'El ingrediente se crea en todas las sucursales; la existencia inicial es solo para ' + esc(sucAct().nombre) + '.' : 'El nombre y el costo se actualizan en todas las sucursales; el mínimo es solo de ' + esc(sucAct().nombre) + '.'}</p>` : ''}
+    ${S.sucursales.length > 1 ? `<p class="note" style="margin:0">${isNew ? 'El ingrediente se crea en todas las sucursales; la existencia inicial es solo para ' + esc(sucAct().nombre) + '.' : 'El nombre, el costo, la categoría y el vencimiento se actualizan en todas las sucursales; el mínimo es solo de ' + esc(sucAct().nombre) + '.'}</p>` : ''}
     ${isNew ? '' : `<p class="note" style="margin:0">${usedBy.length ? 'Se usa en: ' + esc(usedBy.join(', ')) + '.' : 'No se usa en ninguna receta.'} La unidad no se puede cambiar porque las recetas dependen de ella. Para cambiar la existencia use Entrada o Conteo.</p>`}
     <div class="row-actions">${isNew || !esDueno() ? '' : `<button class="danger left" data-act="m-del" ${usedBy.length ? 'disabled title="Quítelo primero de las recetas"' : ''}>Eliminar</button>`}<button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Guardar</button></div>`, '',
     () => {
       const nombre = $('#igN').value.trim(); if (!nombre) { toast('Escriba el nombre.'); return false; }
       const unidad = $('#igU').value; const Uu = UNITS[unidad];
-      return {nombre, unidad, minimo: parseFloat($('#igMin').value) || 0, costo: (parseFloat($('#igC').value) || 0) / Uu.f, stock: isNew ? (parseFloat($('#igS').value) || 0) : undefined};
+      const diasMin = parseInt($('#igD').value, 10) || DIAS_MIN_DEF; if (diasMin < 1 || diasMin > 730) { toast('Los días mínimos deben ser de 1 a 730.'); return false; }
+      return {nombre, unidad, minimo: parseFloat($('#igMin').value) || 0, costo: (parseFloat($('#igC').value) || 0) / Uu.f, stock: isNew ? (parseFloat($('#igS').value) || 0) : undefined,
+        cat: $('#igCat').value.trim(), sub: $('#igSub').value.trim(), vence: $('#igV').checked, diasMin};
     });
   if (!res) return;
   try {
@@ -1799,16 +2104,16 @@ async function ingEdit(id) {
       if (isNew) {
         let nid = res.nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'ing';
         while (inv.items[nid]) nid += '-' + Math.random().toString(36).slice(2, 5);
-        inv.items[nid] = {nombre: res.nombre, unidad: res.unidad, stock: r3(res.stock), minimo: res.minimo, costo: res.costo}; nuevoId = nid;
+        inv.items[nid] = {nombre: res.nombre, unidad: res.unidad, stock: r3(res.stock), minimo: res.minimo, costo: res.costo, cat: res.cat, sub: res.sub, vence: res.vence, diasMin: res.diasMin}; nuevoId = nid;
       } else {
         const it = inv.items[id]; if (!it) throw {code: 'gone'};
-        Object.assign(it, {nombre: res.nombre, minimo: res.minimo, costo: res.costo});
+        Object.assign(it, {nombre: res.nombre, minimo: res.minimo, costo: res.costo, cat: res.cat, sub: res.sub, vence: res.vence, diasMin: res.diasMin});
       }
       await refs.inv.set(inv);
     });
     if (esDueno()) await enOtrasSucursales(items => {
-      if (isNew) { if (items[nuevoId]) return false; items[nuevoId] = {nombre: res.nombre, unidad: res.unidad, stock: 0, minimo: res.minimo, costo: res.costo}; }
-      else { const it = items[id]; if (!it) return false; it.nombre = res.nombre; it.costo = res.costo; }
+      if (isNew) { if (items[nuevoId]) return false; items[nuevoId] = {nombre: res.nombre, unidad: res.unidad, stock: 0, minimo: res.minimo, costo: res.costo, cat: res.cat, sub: res.sub, vence: res.vence, diasMin: res.diasMin}; }
+      else { const it = items[id]; if (!it) return false; Object.assign(it, {nombre: res.nombre, costo: res.costo, cat: res.cat, sub: res.sub, vence: res.vence, diasMin: res.diasMin}); }
     });
     toast(isNew ? 'Ingrediente agregado.' : 'Cambios guardados.');
   } catch (e) { toast('No se pudo guardar. Intente de nuevo.'); }
@@ -2741,6 +3046,14 @@ const ACT = {
   anular: t => anularFlow(t.dataset.n),
   anChip: t => { const a = $('#anMot'); a.value = t.dataset.v; document.querySelectorAll('#anChips button').forEach(b => b.setAttribute('aria-pressed', b === t)); },
   ifil: t => { S.ifil = t.dataset.v; renderInv(); },
+  itab: t => { S.itab = t.dataset.v; viewInv(); },
+  ocfil: t => { S.ocfil = t.dataset.v; renderOC(); },
+  ocNew: () => ocNueva(),
+  ocRec: t => ocRecibir(t.dataset.id || ''),
+  ocVer: t => ocVer(t.dataset.id),
+  catEj: () => categoriasEjemplo(),
+  rcTodo: () => document.querySelectorAll('.rcq').forEach(x => { x.value = x.dataset.p; }),
+  'm-val': t => S.mres && S.mres(t.dataset.v),
   ingIn: t => invMove(t.dataset.id, 'entrada'),
   ingCount: t => invMove(t.dataset.id, 'conteo'),
   ingMerma: t => invMerma(t.dataset.id),
@@ -2829,6 +3142,7 @@ document.addEventListener('input', e => {
   else if (id === 'tkRec') { S.recibido = t.value.replace(',', '.'); updateTotals(); }
   else if (id === 'fQ') { S.fq = t.value; renderFList(); }
   else if (id === 'iQ') { S.iq = t.value; renderInv(); }
+  else if (t.classList.contains('ocq')) { S.ocDraft[t.dataset.id] = t.value; const r = $('#ocRes'); if (r) r.innerHTML = ocResumen(); }
   else if (id === 'mvQ' && $('#mvDiff')) {
     const name = $('.sheet h2').textContent; const v = parseFloat(t.value);
     const ing = Object.values(S.inv).find(i => name.includes(i.nombre));
@@ -2841,6 +3155,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'rSuc') { S.rep.suc = t.value; loadRep(); }
+  else if (t.id === 'ocCat') { S.ocCat = t.value; $('#ocLines').innerHTML = ocLinesHTML(); }
+  else if (t.classList.contains('ivc')) toggleVence(t.dataset.id, t.checked);
   else if (t.id === 'usR') { const w = $('#usSw'); if (w) w.hidden = t.value === 'dueno'; }
   else if (PD && t.dataset.pfi !== undefined) {
     const ri = +t.dataset.pfi; const rows = pRows(); const old = rows[ri]; const nw = t.value; rows[ri] = nw;
