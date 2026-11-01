@@ -597,7 +597,7 @@ const S = {
   db: null, offline: false, ready: false, loaded: {},
   neg: {...NEG_DEF}, productos: [], inv: {}, next: 1, facturas: [], comandas: [], sound: false,
   view: 'venta', cat: 'pizza',
-  cart: [], cliente: CLI_DEF(), pago: 'efectivo', recibido: '', tipo: 'llevar',
+  cart: [], cliente: CLI_DEF(), pago: 'efectivo', recibido: '', tipo: 'llevar', factura: false, servicio: false,
   cajero: ls.get('cajero', ''), busy: false,
   fq: '', fest: 'todas', fsel: null,
   iq: '', ifil: 'todos', mcat: 'todos', itab: 'inv', ocfil: 'abiertas', ordenes: [], ocDraft: {}, ocCat: '',
@@ -1062,12 +1062,13 @@ function renderTicket() {
     </div>
     <div class="tk-lines" id="tkLines">${lines}</div>
     <div class="tk-foot">
-      <div class="tk-opts"><button class="ghost sm" data-act="descMenu" ${S.consumo ? 'disabled' : ''}>${S.desc ? 'Descuento: ' + esc(S.desc.nombre) : '% Descuento'}</button>${S.desc ? '<button class="ghost sm" data-act="descQuitar" aria-label="Quitar descuento">✕</button>' : ''}<button class="ghost sm ${S.consumo ? 'on' : ''}" data-act="consumoToggle" aria-pressed="${!!S.consumo}">Consumo interno</button></div>
+      <div class="tk-opts"><button class="ghost sm" data-act="descMenu" ${S.consumo ? 'disabled' : ''}>${S.desc ? 'Descuento: ' + esc(S.desc.nombre) : '% Descuento'}</button>${S.desc ? '<button class="ghost sm" data-act="descQuitar" aria-label="Quitar descuento">✕</button>' : ''}<button class="ghost sm ${S.servicio && !S.consumo ? 'on' : ''}" data-act="srvToggle" aria-pressed="${!!S.servicio && !S.consumo}" ${S.consumo ? 'disabled' : ''} title="Servicio de mesa: 10 % sobre el precio sin IVA">10 % servicio</button><button class="ghost sm ${S.consumo ? 'on' : ''}" data-act="consumoToggle" aria-pressed="${!!S.consumo}">Consumo interno</button></div>
       ${S.consumo ? `<div class="consumo-box"><b>Consumo interno</b><span>No se cobra ni va a Hacienda. Rebaja inventario y queda en el reporte con su costo.</span>
         <label class="field"><span>Para quién (empleado o dueño)</span><input class="inp" id="tkPara" value="${esc(S.consumoPara || '')}" autocomplete="off" placeholder="Ej. almuerzo de María"></label></div>` : `<div class="tk-client">
-        <label class="field"><span>Cédula</span><input class="inp mono" id="tkNit" value="${esc(S.cliente.nit)}" autocomplete="off" inputmode="numeric" placeholder="Opcional"></label>
-        <label class="field"><span>Cliente <button class="linkbtn" data-act="cf" style="font-size:10.5px;letter-spacing:.04em">Contado</button></span><input class="inp" id="tkNom" value="${esc(S.cliente.nombre)}" autocomplete="off"></label>
-        ${feActiva() ? `<label class="field" style="grid-column:1/-1"><span>Correo del cliente <i id="tkDocT" style="font-style:normal;letter-spacing:.02em;text-transform:none">· ${idTipo(S.cliente.nit) && correoOK(S.cliente.correo) ? 'se emitirá factura electrónica' : 'se emitirá tiquete electrónico'}</i></span><input class="inp" id="tkMail" type="email" value="${esc(S.cliente.correo || '')}" autocomplete="off" placeholder="Con cédula y correo se emite factura electrónica"></label>` : ''}
+        <label class="check" style="grid-column:1/-1;margin:0"><input type="checkbox" id="tkFE" ${S.factura ? 'checked' : ''}><span><b>Factura electrónica</b> <span class="note">${S.factura ? '· a nombre del cliente' : '· sin marcar sale tiquete, cliente contado'}</span></span></label>
+        ${S.factura ? `<label class="field"><span>Cédula</span><input class="inp mono" id="tkNit" value="${esc(S.cliente.nit)}" autocomplete="off" inputmode="numeric" placeholder="9, 10 u 11–12 dígitos"></label>
+        <label class="field"><span>Nombre o razón social</span><input class="inp" id="tkNom" value="${esc(S.cliente.nombre === 'Cliente contado' ? '' : S.cliente.nombre)}" autocomplete="off"></label>
+        <label class="field" style="grid-column:1/-1"><span>Correo del cliente</span><input class="inp" id="tkMail" type="email" value="${esc(S.cliente.correo || '')}" autocomplete="off" placeholder="Ahí le llega la factura"></label>` : ''}
       </div>
       <div class="seg sm" role="group" aria-label="Forma de pago">${PAGOS.map(([k, l]) => `<button data-act="pago" data-v="${k}" aria-pressed="${S.pago === k}">${l}</button>`).join('')}</div>`}
       ${S.pago === 'efectivo' && !S.consumo ? `<div class="cash">
@@ -1078,14 +1079,16 @@ function renderTicket() {
     </div>`;
   updateTotals();
 }
+// 10 % de servicio (ley de restaurantes): sobre el precio sin IVA, después de descuentos; no lleva IVA.
+const servicioDe = total => S.servicio && !S.consumo ? r2(split(total).sub * 0.10) : 0;
 function updateTotals() {
-  const total = cartTotal(); const {sub, iva} = split(total);
+  const bienes = cartTotal(); const {sub, iva} = split(bienes); const srv = servicioDe(bienes); const total = r2(bienes + srv);
   const rec = S.pago === 'efectivo' ? (S.recibido === '' ? total : parseFloat(S.recibido) || 0) : total;
   const cambio = S.pago === 'efectivo' ? Math.max(0, r2(rec - total)) : 0;
   const tot = $('#tkTot');
   const dm = descMonto();
   if (tot && S.consumo) tot.innerHTML = `<dt>Valor de menú (no se cobra)</dt><dd>${money(cartBruto())}</dd><dt>Costo de ingredientes</dt><dd>${money(costoDe(consumoOf(S.cart)))}</dd>`;
-  else if (tot) tot.innerHTML = `${dm ? `<dt>Antes de descuento</dt><dd>${money(cartBruto())}</dd><dt>Descuento ${esc(S.desc.nombre)}</dt><dd class="bad">−${money(dm)}</dd>` : ''}<dt>Subtotal sin IVA</dt><dd>${money(sub)}</dd><dt>IVA ${nf(S.neg.iva, 2)}%</dt><dd>${money(iva)}</dd>
+  else if (tot) tot.innerHTML = `${dm ? `<dt>Antes de descuento</dt><dd>${money(cartBruto())}</dd><dt>Descuento ${esc(S.desc.nombre)}</dt><dd class="bad">−${money(dm)}</dd>` : ''}<dt>Subtotal sin IVA</dt><dd>${money(sub)}</dd><dt>IVA ${nf(S.neg.iva, 2)}%</dt><dd>${money(iva)}</dd>${srv ? `<dt>Servicio 10 %</dt><dd>${money(srv)}</dd>` : ''}
     <dt class="big">Total</dt><dd class="big">${money(total)}</dd>
     ${S.pago === 'efectivo' && S.cart.length ? `<dt>Cambio</dt><dd class="chg">${rec < total - 0.001 ? '<span class="bad">falta ' + money(total - rec) + '</span>' : money(cambio)}</dd>` : ''}`;
   const q = $('#tkQuick');
@@ -1247,15 +1250,18 @@ async function cobrar() {
     if (!esSuper() && !(await askPin('Autorizar consumo interno'))) return;
   }
   ajustarRegalos();
-  const total = esCI ? 0 : cartTotal();
+  const bienes = esCI ? 0 : cartTotal(); const srv = esCI ? 0 : servicioDe(bienes); const total = r2(bienes + srv);
   const rec = S.pago === 'efectivo' ? (S.recibido === '' ? total : parseFloat(S.recibido) || 0) : total;
   if (!esCI && S.pago === 'efectivo' && rec < total - 0.001) return toast('El efectivo recibido no cubre el total.');
-  const nit = esCI ? '' : (S.cliente.nit || '').trim();
-  const nombre = esCI ? 'Consumo: ' + S.consumoPara : (S.cliente.nombre || '').trim() || (nit ? '' : 'Cliente contado');
-  if (nit && !nombre) { toast('Escriba el nombre del cliente para esa cédula.'); $('#tkNom')?.focus(); return; }
-  const correo = esCI ? '' : (S.cliente.correo || '').trim();
-  if (correo && !correoOK(correo)) { toast('Revise el correo del cliente.'); $('#tkMail')?.focus(); return; }
-  if (feActiva() && correo && !idTipo(nit)) { toast('Para factura electrónica la cédula debe tener 9 dígitos (física), 10 (jurídica) u 11–12 (DIMEX).'); $('#tkNit')?.focus(); return; }
+  const conFac = !esCI && S.factura;
+  const nit = conFac ? (S.cliente.nit || '').replace(/\D/g, '') : '';
+  const nombre = esCI ? 'Consumo: ' + S.consumoPara : conFac ? (S.cliente.nombre || '').trim() : 'Cliente contado';
+  const correo = conFac ? (S.cliente.correo || '').trim() : '';
+  if (conFac) {
+    if (!idTipo(nit)) { toast('Para factura electrónica la cédula debe tener 9 dígitos (física), 10 (jurídica) u 11–12 (DIMEX).'); $('#tkNit')?.focus(); return; }
+    if (!nombre || nombre === 'Cliente contado') { toast('Escriba el nombre o la razón social del cliente.'); $('#tkNom')?.focus(); return; }
+    if (!correoOK(correo)) { toast('Escriba un correo válido: ahí le llega la factura electrónica.'); $('#tkMail')?.focus(); return; }
+  }
   const consumo = consumoOf(S.cart);
   const faltan = Object.entries(consumo).filter(([k, q]) => S.inv[k] && S.inv[k].stock < q);
   if (faltan.length) {
@@ -1265,7 +1271,7 @@ async function cobrar() {
     if (!ok) return;
   }
   S.busy = true; updateTotals();
-  const {sub, iva} = split(total);
+  const {sub, iva} = split(bienes);
   const caj = cajeroActual();
   try {
     const f = await withLock(refs.inv, async () => {
@@ -1283,7 +1289,7 @@ async function cobrar() {
         items: lineasFactura(esCI ? 0 : descMonto()),
         bruto: esCI ? 0 : cartBruto(), descuento: !esCI && S.desc ? {...S.desc, monto: descMonto()} : null,
         promos: [...new Set(S.cart.filter(i => i.promo).map(i => i.promoNombre))],
-        total, subtotal: sub, iva, ivaPct: +S.neg.iva || 0, pago: esCI ? 'consumo' : S.pago, recibido: esCI ? 0 : r2(rec), cambio: !esCI && S.pago === 'efectivo' ? r2(rec - total) : 0,
+        total, subtotal: sub, iva, ...(srv ? {servicio: srv, servicioPct: 10} : {}), ivaPct: +S.neg.iva || 0, pago: esCI ? 'consumo' : S.pago, recibido: esCI ? 0 : r2(rec), cambio: !esCI && S.pago === 'efectivo' ? r2(rec - total) : 0,
         estado: esCI ? 'consumo' : 'emitida', tipoDoc: esCI ? 'consumo' : 'venta', consumo, costo: costoDe(consumo),
         ...(esCI ? {consumoPara: S.consumoPara, valorMenu: cartBruto()} : {}),
         negocio: {nombre: S.neg.nombre || '', nit: S.neg.nit || '', direccion: suc.direccion || S.neg.direccion || '', telefono: suc.telefono || S.neg.telefono || '', web: S.neg.web || '', pie: S.neg.pie || '', sucursal: S.sucursales.length > 1 ? suc.nombre : ''}
@@ -1295,7 +1301,7 @@ async function cobrar() {
     });
     const k = kitchenOf(f);
     try { await S.db.doc(sp('comandas/' + f.numero)).set(k); } catch (e) { console.warn(e); toast('La venta se guardó, pero la comanda no llegó a cocina. Avise a cocina.'); }
-    S.cart = []; S.recibido = ''; S.cliente = CLI_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = '';
+    S.cart = []; S.recibido = ''; S.cliente = CLI_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false;
     S.lastF = f; S.busy = false;
     renderGrid(); renderTicket();
     openModal(`<div class="sheet wide"><div class="pair">
@@ -1462,7 +1468,7 @@ function receiptHTML(f) {
     ${f.items.map(it => it.extra ? `<div class="r"><span>&nbsp;&nbsp;+ ${esc(it.nombre)}${it.qty > 1 ? ' x' + it.qty : ''}</span><span>${money(it.total)}</span></div>`
       : `<div>${esc(it.nombre)}${it.size !== 'U' ? ' ' + esc(SIZES[it.size]?.l || it.size) : ''}${it.promo ? ' (regalo)' : ''}</div><div class="r"><span>&nbsp;&nbsp;${it.qty} x ${money(it.precio)}</span><span>${money(it.total)}</span></div>${it.promo ? `<div>&nbsp;&nbsp;Promo: ${esc(it.promo)}</div>` : ''}${it.nota ? `<div>&nbsp;&nbsp;→ ${esc(it.nota)}</div>` : ''}`).join('')}
     ${f.tipoDoc === 'consumo' ? `<hr><div class="r"><span>Valor de menú</span><span>${money(f.valorMenu)}</span></div><div class="r"><span>Costo ingredientes</span><span>${money(f.costo)}</span></div><div class="r tt"><span>A COBRAR</span><span>${money(0)}</span></div><div class="c">Autorizado · no es venta</div>`
-    : `<hr>${f.descuento ? `<div class="r"><span>Total antes de descuento</span><span>${money(f.bruto)}</span></div><div class="r"><span>Descuento: ${esc(f.descuento.nombre)}</span><span>−${money(f.descuento.monto)}</span></div>` : ''}<div class="r"><span>Subtotal</span><span>${money(f.subtotal)}</span></div><div class="r"><span>IVA ${nf(f.ivaPct, 2)}%</span><span>${money(f.iva)}</span></div>
+    : `<hr>${f.descuento ? `<div class="r"><span>Total antes de descuento</span><span>${money(f.bruto)}</span></div><div class="r"><span>Descuento: ${esc(f.descuento.nombre)}</span><span>−${money(f.descuento.monto)}</span></div>` : ''}<div class="r"><span>Subtotal</span><span>${money(f.subtotal)}</span></div><div class="r"><span>IVA ${nf(f.ivaPct, 2)}%</span><span>${money(f.iva)}</span></div>${f.servicio ? `<div class="r"><span>Servicio 10 %</span><span>${money(f.servicio)}</span></div>` : ''}
     <div class="r tt"><span>TOTAL</span><span>${money(f.total)}</span></div>
     <div class="r"><span>${esc(pago)}</span><span>${money(f.recibido)}</span></div>${f.pago === 'efectivo' ? `<div class="r"><span>Cambio</span><span>${money(f.cambio)}</span></div>` : ''}`}
     ${f.fe && f.fe.clave ? `<div class="r"><span>Hacienda</span><span>${esc((FE_ESTADO[f.fe.estado] || [f.fe.estado])[0])}</span></div>` : ''}
@@ -1476,7 +1482,7 @@ function receiptText(f) {
   L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
   f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); });
   if (f.descuento) L.push('-'.repeat(W), lr('Antes de descuento', money(f.bruto)), lr('Descuento', '-' + money(f.descuento.monto)));
-  L.push('-'.repeat(W), lr('Subtotal', money(f.subtotal)), lr('IVA ' + f.ivaPct + '%', money(f.iva)), lr('TOTAL', money(f.total)));
+  L.push('-'.repeat(W), lr('Subtotal', money(f.subtotal)), lr('IVA ' + f.ivaPct + '%', money(f.iva)), ...(f.servicio ? [lr('Servicio 10%', money(f.servicio))] : []), lr('TOTAL', money(f.total)));
   if (f.pago === 'efectivo') L.push(lr('Efectivo', money(f.recibido)), lr('Cambio', money(f.cambio)));
   if (f.estado === 'anulada') L.push('', c('*** ANULADA ***'));
   return L.join('\n');
@@ -2420,7 +2426,8 @@ function repVentas(D) {
   const descT = em.reduce((s, f) => s + (f.descuento?.monto || 0), 0), nDesc = em.filter(f => f.descuento).length;
   const regalos = em.flatMap(f => f.items.filter(it => it.promo)); const regQ = regalos.reduce((a, it) => a + it.qty, 0), regV = regalos.reduce((a, it) => a + (it.precioLista || 0) * it.qty, 0);
   const ciCost = ci.reduce((a, f) => a + (f.costo ?? Object.entries(f.consumo || {}).reduce((s2, [k, q]) => s2 + q * (D.inv[k]?.costo || 0), 0)), 0);
-  const tot = em.reduce((s, f) => s + f.total, 0), net = em.reduce((s, f) => s + f.subtotal, 0), iva = tot - net;
+  const srvT = em.reduce((s, f) => s + (+f.servicio || 0), 0), nSrv = em.filter(f => f.servicio).length;
+  const tot = em.reduce((s, f) => s + f.total - (+f.servicio || 0), 0), net = em.reduce((s, f) => s + f.subtotal, 0), iva = tot - net;
   const cons = {}; em.forEach(f => Object.entries(f.consumo || {}).forEach(([k, q]) => cons[k] = (cons[k] || 0) + q));
   const cost = Object.entries(cons).reduce((s, [k, q]) => s + q * (D.inv[k]?.costo || 0), 0);
   const byP = {}; em.forEach(f => f.items.forEach(it => { const k = it.nombre + '|' + it.size; byP[k] = byP[k] || {n: it.nombre, s: it.size, q: 0, t: 0}; byP[k].q += it.qty; byP[k].t += it.total; }));
@@ -2438,6 +2445,7 @@ function repVentas(D) {
       <div class="kpi"><span class="lbl">Facturas</span><b>${em.length}</b><em>ticket prom. ${money(em.length ? tot / em.length : 0)}</em></div>
       <div class="kpi"><span class="lbl">Costo ingredientes</span><b>${money(cost)}</b><em>${net ? nf(cost / net * 100, 1) + '% de la venta neta' : '—'}</em></div>
       <div class="kpi"><span class="lbl">Anuladas</span><b class="${an.length ? 'bad' : ''}">${an.length}</b><em>${money(an.reduce((s, f) => s + f.total, 0))}</em></div>
+      ${srvT ? `<div class="kpi"><span class="lbl">Servicio 10 %</span><b>${money(srvT)}</b><em>${nSrv} factura${nSrv === 1 ? '' : 's'} · aparte de la venta</em></div>` : ''}
       <div class="kpi"><span class="lbl">Descuentos</span><b>${money(descT)}</b><em>${nDesc} factura${nDesc === 1 ? '' : 's'}</em></div>
       <div class="kpi"><span class="lbl">Regalos de promoción</span><b>${regQ}</b><em>valor de menú ${money(regV)}</em></div>
       <div class="kpi"><span class="lbl">Consumo interno</span><b>${ci.length}</b><em>costo ${money(ciCost)}</em></div>
@@ -3031,7 +3039,7 @@ const ACT = {
   clear: () => { S.cart = []; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
   tipo: t => { S.tipo = t.dataset.v; renderTicket(); },
   pago: t => { S.pago = t.dataset.v; S.recibido = ''; renderTicket(); },
-  cf: () => { S.cliente = CLI_DEF(); $('#tkNit').value = ''; $('#tkNom').value = S.cliente.nombre; if ($('#tkMail')) $('#tkMail').value = ''; },
+  srvToggle: () => { S.servicio = !S.servicio; renderTicket(); },
   rec: t => { S.recibido = t.dataset.v; const i = $('#tkRec'); if (i) i.value = S.recibido; updateTotals(); },
   cobrar: () => cobrar(),
   toTicket: () => $('#ticket')?.scrollIntoView({behavior: 'smooth', block: 'start'}),
@@ -3135,10 +3143,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target, id = t.id;
-  if (id === 'tkNit') { S.cliente.nit = t.value; const x = $('#tkDocT'); if (x) x.textContent = '· ' + (idTipo(S.cliente.nit) && correoOK(S.cliente.correo) ? 'se emitirá factura electrónica' : 'se emitirá tiquete electrónico'); }
+  if (id === 'tkNit') S.cliente.nit = t.value;
   else if (id === 'tkNom') S.cliente.nombre = t.value;
   else if (id === 'tkPara') S.consumoPara = t.value;
-  else if (id === 'tkMail') { S.cliente.correo = t.value; const x = $('#tkDocT'); if (x) x.textContent = '· ' + (idTipo(S.cliente.nit) && correoOK(S.cliente.correo) ? 'se emitirá factura electrónica' : 'se emitirá tiquete electrónico'); }
+  else if (id === 'tkMail') S.cliente.correo = t.value;
   else if (id === 'tkRec') { S.recibido = t.value.replace(',', '.'); updateTotals(); }
   else if (id === 'fQ') { S.fq = t.value; renderFList(); }
   else if (id === 'iQ') { S.iq = t.value; renderInv(); }
@@ -3155,6 +3163,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'rSuc') { S.rep.suc = t.value; loadRep(); }
+  else if (t.id === 'tkFE') { S.factura = t.checked; if (!S.factura) S.cliente = CLI_DEF(); else if (S.cliente.nombre === 'Cliente contado') S.cliente.nombre = ''; renderTicket(); if (S.factura) setTimeout(() => $('#tkNit')?.focus(), 30); }
   else if (t.id === 'ocCat') { S.ocCat = t.value; $('#ocLines').innerHTML = ocLinesHTML(); }
   else if (t.classList.contains('ivc')) toggleVence(t.dataset.id, t.checked);
   else if (t.id === 'usR') { const w = $('#usSw'); if (w) w.hidden = t.value === 'dueno'; }
