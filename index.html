@@ -2999,7 +2999,7 @@ function feAjustesHTML() {
       <label class="field"><span>Nombre o razón social del emisor</span><input class="inp" id="feNom" value="${esc(e.nombre || '')}"></label>
       <label class="field"><span>Cédula del emisor</span><input class="inp mono" id="feId" value="${esc(e.numero || '')}" inputmode="numeric"></label>
       <label class="field"><span>Correo del emisor</span><input class="inp" id="feMail" type="email" value="${esc(e.correo || '')}"></label>
-      <label class="field"><span>Código de actividad económica</span><input class="inp mono" id="feAct" value="${esc(c.actividad || '')}" maxlength="6" inputmode="numeric" placeholder="6 dígitos, según TRIBU-CR"></label>
+      <label class="field"><span>Código de actividad económica</span><input class="inp mono" id="feAct" value="${esc(c.actividad || '')}" maxlength="7" placeholder="Como sale en TRIBU-CR, ej. 5610.0"></label>
       <label class="field"><span>Provincia</span><select class="inp" id="feProv">${PROVINCIAS.map(([k, l]) => `<option value="${k}" ${String(e.provincia) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field"><span>Cantón (código 2 dígitos)</span><input class="inp mono" id="feCan" value="${esc(e.canton || '')}" maxlength="2" inputmode="numeric" placeholder="01"></label>
       <label class="field"><span>Distrito (código 2 dígitos)</span><input class="inp mono" id="feDis" value="${esc(e.distrito || '')}" maxlength="2" inputmode="numeric" placeholder="01"></label>
@@ -3024,6 +3024,13 @@ function feAjustesHTML() {
       <button class="ghost sm" data-act="feCorreo" style="justify-self:start">Guardar correo de envío</button>
       <span class="note">La contraseña queda guardada de forma que solo el servidor la puede leer.</span></div></div>`;
 }
+/** Código de actividad: TRIBU-CR usa CIIU 4 con punto (5610.0 = 6 caracteres); también acepta los 6 dígitos de ATV. */
+function actividadCR(t) {
+  const v = String(t || '').trim().replace(',', '.').replace(/\s/g, '');
+  if (/^\d{4}\.\d$/.test(v) || /^\d{6}$/.test(v)) return v;
+  if (/^\d{5}$/.test(v)) return v.slice(0, 4) + '.' + v[4];
+  return '';
+}
 async function feGuardarCred(a) {
   const u = $('#feU_' + a).value.trim(), pw = $('#feP_' + a).value, pin = $('#feN_' + a).value, file = $('#feK_' + a).files[0];
   if (!/@/.test(u)) return toast('Pegue el usuario completo, con @ y el dominio.');
@@ -3047,14 +3054,14 @@ async function ajSave() {
     mult: {P: parseFloat(v('ajMP')) || .6, M: 1, G: parseFloat(v('ajMG')) || 1.5, F: parseFloat(v('ajMF')) || 2}};
   const g = id => ($('#' + id) ? $('#' + id).value.trim() : '');
   const fe = {activo: !!$('#feOn')?.checked, ambiente: g('feAmb') || 'sandbox', esServicio: g('feSrv') === '1', tarifaIVA: iva,
-    actividad: g('feAct').replace(/\D/g, ''), cabysDefault: g('feCab').replace(/\D/g, ''), proveedorSistemas: g('fePrv').replace(/\D/g, ''),
+    actividad: actividadCR(g('feAct')), cabysDefault: g('feCab').replace(/\D/g, ''), proveedorSistemas: g('fePrv').replace(/\D/g, ''),
     terminal: parseInt(g('feTer'), 10) || 1,
     emisor: {nombre: g('feNom'), nombreComercial: data.nombre, numero: g('feId').replace(/\D/g, ''), correo: g('feMail'), telefono: data.telefono,
       provincia: g('feProv'), canton: g('feCan').padStart(2, '0'), distrito: g('feDis').padStart(2, '0'), barrio: g('feBar'), otrasSenas: g('feSen')}};
   if (fe.activo) {
     const faltan = [];
     if (!fe.emisor.nombre) faltan.push('razón social'); if (!idTipo(fe.emisor.numero)) faltan.push('cédula del emisor'); if (!correoOK(fe.emisor.correo)) faltan.push('correo del emisor');
-    if (!/^\d{6}$/.test(fe.actividad)) faltan.push('actividad económica (6 dígitos)'); if (!/^\d{13}$/.test(fe.cabysDefault)) faltan.push('CABYS por defecto (13 dígitos)');
+    if (!fe.actividad) faltan.push('actividad económica (como sale en TRIBU-CR, ej. 5610.0)'); if (!/^\d{13}$/.test(fe.cabysDefault)) faltan.push('CABYS por defecto (13 dígitos)');
     if (!fe.proveedorSistemas) faltan.push('proveedor del sistema'); if (!fe.emisor.canton || !fe.emisor.distrito) faltan.push('cantón y distrito'); if (fe.emisor.otrasSenas.length < 5) faltan.push('otras señas');
     if (!S.feCfg?.['cred_' + fe.ambiente]) faltan.push('credenciales de ' + (fe.ambiente === 'production' ? 'producción' : 'pruebas'));
     if (faltan.length) return toast('Para activar la facturación electrónica falta: ' + faltan.join(', ') + '.');
