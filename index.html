@@ -2988,7 +2988,7 @@ function feAjustesHTML() {
     <div class="grid2"><label class="field"><span>Usuario (del XML firmado)</span><input class="inp mono" id="feU_${a}" autocomplete="off" placeholder="cpj-3-101-...@${a === 'sandbox' ? 'stag.' : ''}comprobanteselectronicos.go.cr"></label>
     <label class="field"><span>Contraseña</span><input class="inp mono" id="feP_${a}" type="password" autocomplete="new-password"></label>
     <label class="field"><span>Llave criptográfica (.p12)</span><input class="inp" id="feK_${a}" type="file" accept=".p12,.pfx" style="padding-top:8px"></label>
-    <label class="field"><span>PIN de la llave (4 dígitos)</span><input class="inp mono" id="feN_${a}" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
+    <label class="field"><span>PIN de la llave (el que puso al generarla en TRIBU-CR)</span><input class="inp mono" id="feN_${a}" type="password" maxlength="128" autocomplete="new-password"></label></div>
     <button class="ghost sm" data-act="feCred" data-v="${a}" style="justify-self:start">Guardar credenciales de ${t}</button>
     <span class="note">Se guardan cifradas en Firebase y solo el servidor puede leerlas. Nadie las puede ver desde el sistema, ni siquiera usted: para cambiarlas, cárguelas de nuevo.</span></div>`;
   return `<div class="sect" style="margin:0"><h3>Facturación electrónica (Hacienda)</h3>
@@ -3025,10 +3025,10 @@ function feAjustesHTML() {
       <span class="note">La contraseña queda guardada de forma que solo el servidor la puede leer.</span></div></div>`;
 }
 async function feGuardarCred(a) {
-  const u = $('#feU_' + a).value.trim(), pw = $('#feP_' + a).value, pin = $('#feN_' + a).value.trim(), file = $('#feK_' + a).files[0];
+  const u = $('#feU_' + a).value.trim(), pw = $('#feP_' + a).value, pin = $('#feN_' + a).value, file = $('#feK_' + a).files[0];
   if (!/@/.test(u)) return toast('Pegue el usuario completo, con @ y el dominio.');
   if (!pw) return toast('Escriba la contraseña.');
-  if (!/^\d{4}$/.test(pin)) return toast('El PIN de la llave tiene 4 dígitos.');
+  if (pin.length < 4) return toast('Escriba el PIN de la llave, tal como lo puso en TRIBU-CR (mayúsculas, símbolos y todo).');
   if (!file) return toast('Seleccione el archivo de la llave criptográfica (.p12).');
   if (file.size > 20000) return toast('Ese archivo no parece una llave criptográfica .p12.');
   const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
