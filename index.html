@@ -515,7 +515,7 @@ const CATNAME = Object.fromEntries(CATS);
 const TIPOS = [['mesa', 'Comer aquí'], ['llevar', 'Para llevar'], ['domicilio', 'Domicilio']];
 const PAGOS = [['efectivo', 'Efectivo'], ['tarjeta', 'Tarjeta'], ['transferencia', 'Transf.']];
 const UNITS = {g: {l: 'g', big: 'kg', f: 1000}, ml: {l: 'ml', big: 'L', f: 1000}, unidad: {l: 'u', big: 'u', f: 1}};
-const MOTIVOS = ['Error de cobro', 'Cliente canceló', 'Producto equivocado', 'Datos de cliente incorrectos', 'Venta de prueba'];
+const MOTIVOS = ['Cliente insatisfecho', 'Error de cobro', 'Cliente canceló', 'Producto equivocado', 'Datos de cliente incorrectos', 'Venta de prueba'];
 const NEG_DEF = {nombre: "SPANKY'S", nit: '', direccion: '', telefono: '', serie: 'A', iva: 13, moneda: '₡', pin: '1234', cajeros: ['Caja 1'], mult: {P: 0.6, M: 1, G: 1.5, F: 2}, pie: 'Gracias por su compra'};
 const NOTAS = ['Sin cebolla', 'Sin chile', 'Sin aceitunas', 'Bien cocida', 'Poco cocida', 'Cortar en cuadros'];
 const ESTADOS_K = {pendiente: {l: 'Por preparar', next: 'horno', btn: 'Al horno'}, horno: {l: 'En horno', next: 'lista', btn: 'Marcar lista'}, lista: {l: 'Listas para entregar', next: 'entregada', btn: 'Entregada'}};
@@ -1443,7 +1443,7 @@ function cierreHTML(t) {
     <div class="r"><span>Cierre</span><span>${fdt(c.ts)}</span></div><div class="r"><span>Cerró</span><span>${esc(c.por || '')}</span></div><div class="r"><span>Autorizó</span><span>${esc(c.autoriza || '')}</span></div><hr>
     <div class="r"><span>Ventas (${c.n || 0})</span><span>${money(c.total)}</span></div>
     <div class="r"><span>&nbsp;&nbsp;Efectivo</span><span>${money(c.efectivo)}</span></div><div class="r"><span>&nbsp;&nbsp;Tarjeta</span><span>${money(c.tarjeta)}</span></div><div class="r"><span>&nbsp;&nbsp;Transferencia</span><span>${money(c.transferencia)}</span></div>
-    <div class="r"><span>Anuladas (${c.anuladas || 0})</span><span>${money(c.montoAnulado)}</span></div><hr>
+    <div class="r"><span>Anuladas (${c.anuladas || 0})</span><span>${money(c.montoAnulado)}</span></div>${(t.movs || []).some(m => m.devolucion) ? `<div class="r"><span>Devoluciones de ventas anteriores (${t.movs.filter(m => m.devolucion).length})</span><span>${money(t.movs.filter(m => m.devolucion).reduce((a, m) => a + m.monto, 0))}</span></div>` : ''}<hr>
     <div class="r"><span>Fondo inicial</span><span>${money(t.fondo)}</span></div><div class="r"><span>+ Ventas en efectivo</span><span>${money(c.efectivo)}</span></div>
     <div class="r"><span>+ Entradas</span><span>${money(c.entradas)}</span></div><div class="r"><span>− Salidas</span><span>${money(c.salidas)}</span></div>
     <div class="r tt"><span>ESPERADO</span><span>${money(c.esperado)}</span></div><div class="r tt"><span>CONTADO</span><span>${money(c.contado)}</span></div>
@@ -1580,7 +1580,7 @@ function renderFDet() {
   const f = S.facturas.find(x => x.numero === S.fsel);
   if (!f) { el.innerHTML = `<div class="empty">${ico('especial')}<b>Seleccione una factura</b><span>Verá el comprobante, podrá copiarlo o anularlo.</span></div>`; return; }
   el.innerHTML = `<div class="receipt">${receiptHTML(f)}</div>
-    ${f.estado === 'anulada' ? `<div class="voidbox"><b>Anulada el ${fdt(f.anulacion?.ts)}</b><span>Motivo: ${esc(f.anulacion?.motivo)}</span><span class="mute">Por ${esc(f.anulacion?.cajero || '')} · ${f.anulacion?.devuelto ? 'ingredientes devueltos al inventario' : 'ingredientes no devueltos (merma)'}</span></div>` : ''}
+    ${f.estado === 'anulada' ? `<div class="voidbox"><b>Anulada el ${fdt(f.anulacion?.ts)}</b><span>Motivo: ${esc(f.anulacion?.motivo)}</span>${f.anulacion?.devolucion && f.anulacion.devolucion.medio !== 'no' ? `<span>Devolución: ${money(f.anulacion.devolucion.monto)} por ${esc(f.anulacion.devolucion.medio)}${f.anulacion.devolucion.salidaCaja ? ' (salida de la caja)' : ''}</span>` : ''}<span class="mute">Por ${esc(f.anulacion?.cajero || '')} · ${f.anulacion?.devuelto ? 'ingredientes devueltos al inventario' : 'ingredientes no devueltos (merma)'}</span></div>` : ''}
     ${feBox(f)}
     <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
 }
@@ -1643,9 +1643,18 @@ async function anularFlow(numero) {
     <div class="field"><span>Motivo</span><div class="chips" id="anChips">${MOTIVOS.map(m => `<button data-act="anChip" data-v="${esc(m)}" aria-pressed="false">${esc(m)}</button>`).join('')}</div>
     <textarea class="inp" id="anMot" placeholder="Describa el motivo (obligatorio)"></textarea></div>
     <label class="check"><input type="checkbox" id="anDev" checked><span>Devolver los ingredientes al inventario.<br><span class="note">Desmárquelo si la pizza ya se preparó y se desechó: el consumo queda como merma.</span></span></label>
+    ${f.estado === 'emitida' ? `<label class="field"><span>Devolución de dinero al cliente (${money(f.total)})</span><select class="inp" id="anRf">
+      ${[['efectivo', 'Se devuelve en efectivo de la caja'], ['tarjeta', 'Se devuelve a la tarjeta (en el datáfono)'], ['transferencia', 'Se devuelve por transferencia'], ['no', 'No se devuelve dinero (no se había cobrado)']].map(([k, l]) => `<option value="${k}" ${k === f.pago ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <p class="note" style="margin:0">Pagó con ${esc((PAGOS.find(x => x[0] === f.pago) || ['', f.pago])[1])}. Si la factura ya fue aceptada por Hacienda, el sistema emite sola la nota de crédito.</p>` : ''}
     <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="danger" data-act="m-ok">Continuar</button></div>`, '',
-    () => { motivo = $('#anMot').value.trim(); if (motivo.length < 3) { toast('Escriba el motivo de la anulación.'); $('#anMot').focus(); return false; } return {motivo, devolver: $('#anDev').checked}; });
+    () => { motivo = $('#anMot').value.trim(); if (motivo.length < 3) { toast('Escriba el motivo de la anulación.'); $('#anMot').focus(); return false; } return {motivo, devolver: $('#anDev').checked, medio: $('#anRf')?.value || 'no'}; });
   if (!res) return;
+  // Efectivo: si la venta se cobró en efectivo en una caja que sigue abierta, al anularla ya sale del "esperado" de esa caja.
+  // Si fue en un turno ya cerrado (o se cobró de otra forma), el efectivo que se devuelve hoy es una salida de la caja actual.
+  const tAb = turnoAct();
+  const yaDescuenta = f.pago === 'efectivo' && S.turnosAb.some(t => t.id === f.turno);
+  const conSalida = res.medio === 'efectivo' && !yaDescuenta;
+  if (conSalida && !tAb) { toast('Para devolver efectivo, abra primero la caja de este equipo: la devolución sale de esa gaveta.'); return; }
   if (!esSuper() && !(await askPin('Autorizar anulación'))) return;
   try {
     await withLock(refs.inv, async () => {
@@ -1657,10 +1666,15 @@ async function anularFlow(numero) {
         for (const [k, q] of Object.entries(fs.data().consumo || {})) if (inv.items[k]) inv.items[k].stock = r3(inv.items[k].stock + q);
         await refs.inv.set(inv);
       }
-      await ref.update({estado: 'anulada', anulacion: {motivo: res.motivo, ts: Date.now(), cajero: cajeroActual(), devuelto: res.devolver}});
+      await ref.update({estado: 'anulada', anulacion: {motivo: res.motivo, ts: Date.now(), cajero: cajeroActual(), devuelto: res.devolver,
+        ...(f.estado === 'emitida' ? {devolucion: {medio: res.medio, monto: res.medio === 'no' ? 0 : f.total, salidaCaja: conSalida, ...(conSalida ? {caja: tAb.caja, turno: tAb.id} : {})}} : {})}});
     });
     try { const kr = S.db.doc(sp('comandas/' + numero)); if ((await kr.get()).exists) await kr.update({estado: 'anulada', tsEstado: Date.now()}); } catch {}
-    toast(`Factura ${numero} anulada.`);
+    if (conSalida) {
+      try { await turnoUpdate(tAb, d => ({movs: [...(d.movs || []), {tipo: 'salida', monto: r2(f.total), motivo: `Devolución ${numero}: ${res.motivo}`, ts: Date.now(), por: cajeroActual(), devolucion: numero}]})); }
+      catch (e) { console.warn(e); toast(`Factura ${numero} anulada, pero no se pudo anotar la salida en la caja. Regístrela en Caja → Salida de efectivo.`); return; }
+    }
+    toast(`Factura ${numero} anulada.${res.medio === 'efectivo' ? ` Entregue ${money(f.total)} al cliente${conSalida ? ' (quedó como salida de la caja)' : ''}.` : res.medio === 'tarjeta' ? ' Haga la devolución en el datáfono.' : res.medio === 'transferencia' ? ' Haga la transferencia al cliente.' : ''}`);
   } catch (e) { toast(e && e.code === 'ya' ? 'Esa factura ya estaba anulada.' : 'No se pudo anular. Intente de nuevo.'); }
 }
 
