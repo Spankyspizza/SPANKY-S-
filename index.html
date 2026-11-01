@@ -1651,6 +1651,7 @@ async function feGuardarCorreo() {
   try {
     await S.db.doc('privado/correo').set({...d, ts: Date.now()});
     await S.db.doc('config/fe').set({correo: {user: d.user, from: d.from, host: d.host, avisos: d.avisos, ts: Date.now()}}, {merge: true});
+    S.feCfg = {...(S.feCfg || {}), correo: {user: d.user, from: d.from, host: d.host, avisos: d.avisos, ts: Date.now()}};
     $('#smK').value = ''; bit('Correo de envío guardado', `${d.user} · avisos a ${d.avisos}`); toast('Correo de envío guardado.'); viewAjustes();
   } catch (e) { toast('No se pudo guardar el correo.'); }
 }
@@ -2933,6 +2934,14 @@ const AJ_SECS = [
   ['bitacora', 'Bitácora', 'Quién cambió qué y cuándo', false]
 ];
 function viewAjustes() {
+  // Lee config/fe directo del servidor (no de la copia local) para que Hacienda y correo muestren lo guardado de verdad.
+  if (S.db && esDueno() && !S.feFresh) {
+    S.feFresh = true;
+    S.db.doc('config/fe').get({source: 'server'}).then(s => {
+      const d = s.exists ? s.data() : null;
+      if (JSON.stringify(d) !== JSON.stringify(S.feCfg)) { S.feCfg = d; if (S.view === 'ajustes') viewAjustes(); }
+    }).catch(e => console.warn('config/fe', e)).finally(() => setTimeout(() => { S.feFresh = false; }, 3000));
+  }
   const n = S.neg;
   if (!AJ_SECS.some(x => x[0] === S.ajSec)) S.ajSec = ls.get('ajSec', 'negocio');
   const sec = (id, html) => `<div class="ajsec" data-sec="${id}" ${S.ajSec === id ? '' : 'hidden'}>${html}</div>`;
@@ -3042,6 +3051,7 @@ async function feGuardarCred(a) {
   try {
     await S.db.doc('privado/fe_' + a).set({usuario: u, password: pw, pin, p12: b64, ts: Date.now()});
     await S.db.doc('config/fe').set({['cred_' + a]: {ts: Date.now(), usuario: u.replace(/^(.{6}).*(@.*)$/, '$1…$2')}}, {merge: true});
+    S.feCfg = {...(S.feCfg || {}), ['cred_' + a]: {ts: Date.now(), usuario: u.replace(/^(.{6}).*(@.*)$/, '$1…$2')}};
     ['feU_', 'feP_', 'feN_', 'feK_'].forEach(k => { $('#' + k + a).value = ''; });
     bit('Credenciales de Hacienda guardadas', a === 'production' ? 'producción' : 'pruebas'); toast('Credenciales guardadas.'); viewAjustes();
   } catch (e) { toast(e && e.code === 'permission-denied' ? 'Firebase rechazó el guardado: publique las reglas nuevas de seguridad.' : 'No se pudieron guardar las credenciales.'); }
@@ -3057,18 +3067,18 @@ async function ajSave() {
     actividad: actividadCR(g('feAct')), cabysDefault: g('feCab').replace(/\D/g, ''), proveedorSistemas: g('fePrv').replace(/\D/g, ''),
     terminal: parseInt(g('feTer'), 10) || 1,
     emisor: {nombre: g('feNom'), nombreComercial: data.nombre, numero: g('feId').replace(/\D/g, ''), correo: g('feMail'), telefono: data.telefono,
-      provincia: g('feProv'), canton: g('feCan').padStart(2, '0'), distrito: g('feDis').padStart(2, '0'), barrio: g('feBar'), otrasSenas: g('feSen')}};
+      provincia: g('feProv'), canton: g('feCan').replace(/\D/g, '') ? g('feCan').replace(/\D/g, '').padStart(2, '0') : '', distrito: g('feDis').replace(/\D/g, '') ? g('feDis').replace(/\D/g, '').padStart(2, '0') : '', barrio: g('feBar'), otrasSenas: g('feSen')}};
   if (fe.activo) {
     const faltan = [];
     if (!fe.emisor.nombre) faltan.push('razón social'); if (!idTipo(fe.emisor.numero)) faltan.push('cédula del emisor'); if (!correoOK(fe.emisor.correo)) faltan.push('correo del emisor');
     if (!fe.actividad) faltan.push('actividad económica (como sale en TRIBU-CR, ej. 5610.0)'); if (!/^\d{13}$/.test(fe.cabysDefault)) faltan.push('CABYS por defecto (13 dígitos)');
-    if (!fe.proveedorSistemas) faltan.push('proveedor del sistema'); if (!fe.emisor.canton || !fe.emisor.distrito) faltan.push('cantón y distrito'); if (fe.emisor.otrasSenas.length < 5) faltan.push('otras señas');
-    if (!S.feCfg?.['cred_' + fe.ambiente]) faltan.push('credenciales de ' + (fe.ambiente === 'production' ? 'producción' : 'pruebas'));
+    if (!fe.proveedorSistemas) faltan.push('proveedor del sistema'); if (!/^(0[1-9]|[1-9]\d)$/.test(fe.emisor.canton) || !/^(0[1-9]|[1-9]\d)$/.test(fe.emisor.distrito)) faltan.push('cantón y distrito (códigos de 2 dígitos, ej. 01)'); if (fe.emisor.otrasSenas.length < 5) faltan.push('otras señas');
     if (faltan.length) return toast('Para activar la facturación electrónica falta: ' + faltan.join(', ') + '.');
     if (fe.ambiente === 'production' && S.feCfg?.ambiente !== 'production' && !(await confirmBox('Pasar a producción', 'Desde ahora cada venta se enviará a Hacienda como comprobante real, con valor fiscal. ¿Continuar?', 'Pasar a producción'))) return;
   }
   try {
     await refs.fe.set(fe, {merge: true});
+    S.feCfg = {...(S.feCfg || {}), ...fe};
     await refs.neg.set({...S.neg, ...data});
     bit('Ajustes guardados', [S.neg.pin !== pin ? 'cambió el PIN de supervisor' : '', +S.neg.iva !== iva ? `IVA ${S.neg.iva} → ${iva} %` : '', S.neg.nombre !== data.nombre ? `nombre ${S.neg.nombre} → ${data.nombre}` : '',
       (S.feCfg?.ambiente || 'sandbox') !== fe.ambiente ? `facturación en ${fe.ambiente === 'production' ? 'PRODUCCIÓN' : 'pruebas'}` : '', !!S.feCfg?.activo !== fe.activo ? `facturación ${fe.activo ? 'activada' : 'desactivada'}` : ''].filter(Boolean).join(' · ') || 'sin cambios importantes');
