@@ -252,7 +252,7 @@ tfoot td{font-weight:700;border-top:1px solid var(--line)}
 .kq{font-weight:600}
 .ksz{border:1.5px solid var(--ink);border-radius:3px;text-align:center;font-weight:700;font-size:12px;line-height:18px;width:20px}
 .kit-it em,.kcard em{display:block;font:700 12.5px var(--f-ui);font-style:normal;margin-top:1px}
-.kboard{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.kboard{display:grid;grid-template-columns:repeat(5,minmax(210px,1fr));gap:12px;align-items:start;overflow-x:auto;padding-bottom:6px}
 .kcol h3{display:flex;justify-content:space-between;font-size:12px;text-transform:uppercase;letter-spacing:.08em;padding-bottom:8px;border-bottom:2px solid var(--ink)}
 .kcards{display:grid;gap:10px;margin-top:10px}
 .kcard{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;font-family:var(--f-mono)}
@@ -398,6 +398,24 @@ th{color:var(--brand)}
 .pk-img{display:block;width:84px;height:84px;border-radius:12px;overflow:hidden;flex:none;background:radial-gradient(circle,#FFFFFF 0%,#FBE3C4 100%)}
 .pk-img img{width:100%;height:100%;object-fit:contain;padding:3px}
 .pk-img.real img{object-fit:cover;padding:0}
+.bebgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}
+.bebcard{display:grid;justify-items:center;gap:4px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--paper);text-align:center;cursor:pointer;min-height:120px;position:relative}
+.bebcard:hover:not([disabled]){border-color:var(--brand);box-shadow:0 2px 10px rgba(109,0,161,.12)}
+.bebcard b{font-size:15px}.bebcard .beb-pr{color:var(--brand);font-weight:700}
+.bebcard.out{opacity:.45;cursor:not-allowed}
+.beb-img{display:block;width:100%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:#FFF1DD}
+.beb-img img{width:100%;height:100%;object-fit:contain;padding:4px}.beb-img.real img{object-fit:cover;padding:0}
+.beb-scale{display:none}
+.bebgrid.sab{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+.bebcard.sabor{min-height:96px;align-content:center}
+.sab-dot{width:30px;height:30px;border-radius:50%;background:var(--c);box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 0 0 3px #fff,0 0 0 4px var(--line)}
+.xgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px}
+.xgrid button{display:grid;gap:4px;padding:6px 6px 8px;border:2px solid var(--line);border-radius:14px;background:var(--paper);text-align:center;position:relative;cursor:pointer}
+.xgrid button b{font-size:13px}.xgrid button .mono{color:var(--brand);font-weight:700;font-size:12.5px}
+.xgrid button[aria-pressed="true"]{border-color:var(--brand);background:#F6EEFF}
+.xgrid button[aria-pressed="true"]::after{content:'✓';position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px}
+.x-img{display:block;width:100%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:#FFF1DD}
+.x-img img{width:100%;height:100%;object-fit:contain;padding:4px}.x-img.real img{object-fit:cover;padding:0}
 .mini-img{display:block;width:44px;height:44px;border-radius:9px;overflow:hidden;flex:none;background:#FFF1DD}
 .mini-img img{width:100%;height:100%;object-fit:contain}
 .mini-img.real img{object-fit:cover}
@@ -519,7 +537,13 @@ const UNITS = {g: {l: 'g', big: 'kg', f: 1000}, ml: {l: 'ml', big: 'L', f: 1000}
 const MOTIVOS = ['Cliente insatisfecho', 'Error de cobro', 'Cliente canceló', 'Producto equivocado', 'Datos de cliente incorrectos', 'Venta de prueba'];
 const NEG_DEF = {nombre: "SPANKY'S", nit: '', direccion: '', telefono: '', serie: 'A', iva: 13, moneda: '₡', pin: '1234', cajeros: ['Caja 1'], mult: {P: 0.6, M: 1, G: 1.5, F: 2}, pie: 'Gracias por su compra'};
 const NOTAS = ['Sin cebolla', 'Sin chile', 'Sin aceitunas', 'Bien cocida', 'Poco cocida', 'Cortar en cuadros'];
-const ESTADOS_K = {pendiente: {l: 'Por preparar', next: 'horno', btn: 'Al horno'}, horno: {l: 'En horno', next: 'lista', btn: 'Marcar lista'}, lista: {l: 'Listas para entregar', next: 'entregada', btn: 'Entregada'}};
+// Fases de cocina (trazabilidad). 'lista' es el estado viejo: se trata como 'empacada'.
+const ESTADOS_K = {pendiente: {l: 'Por preparar', next: 'alisto', btn: 'Alistar'}, alisto: {l: 'En alisto', next: 'horno', btn: 'Al horno'},
+  horno: {l: 'En horno', next: 'empacada', btn: 'Empacada'}, empacada: {l: 'Empacadas', next: 'entregada', btn: 'Entregada'}, enviada: {l: 'En camino', next: 'entregada', btn: 'Entregada'}};
+const K_ACTIVOS = ['pendiente', 'alisto', 'horno', 'empacada', 'lista', 'enviada'];
+const kEstado = c => c.estado === 'lista' ? 'empacada' : c.estado;
+const kNextDe = c => { const e = kEstado(c); return e === 'empacada' && c.tipo === 'domicilio' ? 'enviada' : ESTADOS_K[e]?.next; };
+const kBtnDe = c => { const e = kEstado(c); return e === 'empacada' && c.tipo === 'domicilio' ? 'Enviar' : ESTADOS_K[e]?.btn; };
 const CLI_DEF = () => ({nit: '', nombre: 'Cliente contado', correo: ''});
 // Roles: qué secciones ve cada uno. El dueño ve todo y todas las sucursales.
 const ROLES = {
@@ -937,7 +961,7 @@ function subSuc() {
   if (esSuper()) ok(db.collection(sp('ordenes')).orderBy('n', 'desc').limit(200).onSnapshot(s => { S.ordenes = s.docs.map(d => d.data()); refresh('oc'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('turnos')).where('estado', '==', 'abierto').onSnapshot(s => { S.turnosAb = s.docs.map(d => d.data()); refresh('caja'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('facturas')).orderBy('ts', 'desc').limit(300).onSnapshot(s => { S.facturas = s.docs.map(d => d.data()); S.loaded.fact = true; refresh('fact'); }, onErr));
-  ok(db.collection(sp('comandas')).where('estado', 'in', ['pendiente', 'horno', 'lista']).limit(200).onSnapshot(s => {
+  ok(db.collection(sp('comandas')).where('estado', 'in', K_ACTIVOS).limit(200).onSnapshot(s => {
     const prev = new Set(S.comandas.filter(c => c.estado === 'pendiente').map(c => c.numero));
     S.comandas = s.docs.map(d => d.data()).sort((a, b) => a.ts - b.ts);
     if (S.loaded.com && S.comandas.some(c => c.estado === 'pendiente' && !prev.has(c.numero))) beep();
@@ -988,7 +1012,7 @@ function refresh(kind) {
 function renderRail() {
   const low = lowCount();
   const n = (S.neg.nombre || 'P').split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const pend = S.comandas.filter(c => c.estado !== 'lista').length;
+  const pend = S.comandas.filter(c => !['lista', 'empacada', 'enviada'].includes(c.estado)).length;
   const items = [['venta', 'Venta'], ['cocina', 'Cocina'], ['facturas', 'Facturas'], ['inventario', 'Inventario'], ['menu', 'Menú'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']].filter(([k]) => puedeVer(k));
   const me = S.me ? `<button class="nav me" data-act="meMenu" title="${esc(S.me.nombre)} · ${esc(sucAct().nombre)}"><span class="me-av">${esc((S.me.nombre || S.me.usuario || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span><span class="me-suc">${esc(S.sucursales.length > 1 || !esDueno() ? sucAct().nombre : ROLES[S.me.rol]?.l || '')}</span></button>` : '';
   $('#rail').innerHTML = `<div class="brand" title="${esc(S.neg.nombre)}"><img src="${LOGO_AV}" alt="Spanky's"></div>` +
@@ -1028,13 +1052,14 @@ function renderGrid() {
   const g = $('#grid'); if (!g) return;
   if (!S.ready) { g.innerHTML = `<div class="empty" style="grid-column:1/-1">${ico('especial')}<span>Cargando menú…</span></div>`; return; }
   if (S.cat === 'combo') { g.innerHTML = combosGrid(); return; }
-  const list = S.productos.filter(p => p.activo !== false && p.cat === S.cat);
-  if (!list.length) {
+  const list = S.productos.filter(p => p.activo !== false && p.cat === S.cat && !esBebGrupo(p));
+  const grupos = S.cat === 'bebida' ? gruposBeb() : [];
+  if (!list.length && !grupos.length) {
     g.innerHTML = `<div class="empty" style="grid-column:1/-1">${ico(S.cat === 'bebida' ? 'lata' : S.cat === 'pizza' ? 'queso' : 'pan')}<b>No hay ${CATNAME[S.cat].toLowerCase()} en el menú</b><span>Agréguelas en la sección Menú, con su precio y su receta.</span>${S.productos.length === 0 && S.db && esDueno() ? `<button class="primary sm" data-act="seed">Cargar menú inicial de SPANKY'S</button>` : ''}${esDueno() ? `<button class="ghost sm" data-act="go" data-v="menu">Ir a Menú</button>` : '<span class="note">El dueño del negocio debe cargar el menú.</span>'}</div>`;
     return;
   }
   const used = consumoOf(S.cart);
-  g.innerHTML = list.map(p => {
+  g.innerHTML = grupos.map(gr => tileGrupoBeb(gr, used)).join('') + list.map(p => {
     const sz = p.tamanos.includes('M') ? 'M' : p.tamanos[0];
     const n = avail(p, sz, used);
     const inCart = S.cart.filter(it => it.id === p.id).reduce((a, it) => a + it.qty, 0);
@@ -1125,13 +1150,14 @@ function openPicker(id) {
       return `<button class="pk-size ${n <= 0 ? 'out' : n <= 5 ? 'low' : ''}" data-act="pick" data-v="${s}"><span class="pk-dw"><span class="pk-dia ${foto?.real ? 'real' : ''}" style="--d:${DIA[s] || 1}">${foto ? `<img src="${foto.src}" data-fb="${foto.fb}" alt="" decoding="async" referrerpolicy="no-referrer" onerror="fotoFallo(this)">` : ''}</span></span><b>${SIZES[s].l}</b><span class="mono mute">${SIZES[s].i}</span><strong class="mono">${money0(priceOf(p, s))}</strong><i>${lab}</i></button>`;
     }).join('')}</div>
     ${p.cat === 'pizza' ? mitadesHTML(p) : ''}
-    ${p.cat === 'pizza' && extrasActivos().length ? `<div class="field"><span>Extras (se cobran aparte)</span><div class="chips" id="pkExtras">${extrasActivos().map(e => `<button data-act="pkExtra" data-v="${esc(e.id)}" aria-pressed="false">${esc(e.nombre)} <b class="mono" style="margin-left:4px">+${money0(priceOf(e, 'U'))}</b></button>`).join('')}</div></div>` : ''}
     <div class="field"><span>Indicación para cocina (opcional)</span><div class="chips" id="pkChips">${NOTAS.map(n => `<button data-act="pkNota" data-v="${esc(n)}" aria-pressed="false">${esc(n)}</button>`).join('')}</div>
       <input class="inp" id="pkNota" placeholder="Ej. mitad pepperoni, mitad hongos" autocomplete="off"></div>
   </div>`);
 }
+function marcaInicio() { if (!S.cart.length || !S.cartTs) S.cartTs = Date.now(); }
 function addToCart(id, sz, nota = '', exIds = [], promo = null, mitadId = null) {
   const p = prod(id); if (!p) return;
+  if (!S.cart.length) S.cartTs = Date.now();
   if (!p.tamanos.includes(sz)) sz = p.tamanos[0];
   nota = (nota || '').trim();
   const p2 = mitadId ? prod(mitadId) : null;
@@ -1161,6 +1187,7 @@ function cycleSize(key) {
 // Agregar o cambiar extras de una pizza que ya está en la comanda
 async function lineExtras(key) {
   const it = S.cart.find(i => i.key === key); if (!it) return;
+  // (las fotos de cada extra salen de internet; si no cargan, se ve la ilustración)
   const exs = extrasActivos();
   if (!exs.length) {
     if (!esDueno()) return toast('No hay extras en el menú. El dueño debe crearlos en Menú → Extras.');
@@ -1169,8 +1196,8 @@ async function lineExtras(key) {
   }
   const tiene = new Set((it.extras || []).map(e => e.id));
   const res = await dialog(`<h2>Extras · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplican a las ' + it.qty + ' pizzas de esta línea' : 'Toque los extras que pide el cliente'}</small></h2>
-    <div class="chips" id="lxChips">${exs.map(e => `<button data-act="pkExtra" data-v="${esc(e.id)}" aria-pressed="${tiene.has(e.id)}">${esc(e.nombre)} <b class="mono" style="margin-left:4px">+${money0(priceOf(e, 'U'))}</b></button>`).join('')}</div>
-    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Listo</button></div>`, '',
+    <div class="xgrid" id="lxChips">${exs.map(e => `<button data-act="pkExtra" data-v="${esc(e.id)}" aria-pressed="${tiene.has(e.id)}">${imgHTML(fotoExtra(e), 'x-img')}<b>${esc(e.nombre.replace(/^extra\s+/i, '').replace(/^./, c => c.toUpperCase()))}</b><span class="mono">+${money0(priceOf(e, 'U'))}</span></button>`).join('')}</div>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Listo</button></div>`, 'wide',
     () => [...document.querySelectorAll('#lxChips button[aria-pressed="true"]')].map(b => b.dataset.v));
   if (!res) return;
   const extras = res.map(x => prod(x)).filter(Boolean).map(e => ({id: e.id, nombre: e.nombre, precio: priceOf(e, 'U')}));
@@ -1178,6 +1205,166 @@ async function lineExtras(key) {
   const otra = S.cart.find(i => i.key === nk && i !== it);
   if (otra) { otra.qty += it.qty; S.cart = S.cart.filter(i => i !== it); } else { it.extras = extras; it.key = nk; }
   renderGrid(); renderTicket();
+}
+
+/* ---------------- BEBIDAS POR PRESENTACIÓN Y SABOR ----------------
+   Cada sabor de cada presentación es un producto (para precio, receta e inventario propios) con
+   grupo / presentacion / sabor. En Venta se muestra un solo botón por grupo:
+   grupo → presentación (si hay más de una) → sabores con existencia. */
+const BEB_GRUPOS = [['Gaseosa desechable', 'desechable'], ['Gaseosa lata', 'lata'], ['Gaseosa retornable', 'retornable'], ['Agua', 'agua'], ['Natural', 'natural']];
+const FOTOS_BEB = {
+  desechable: UNSPLASH('1568657624422-1b8713e79461'), lata: UNSPLASH('1654847675037-c7f0bab94aab'),
+  retornable: UNSPLASH('1632852521784-d85d5b62dd62'), agua: UNSPLASH('1550505095-81378a674395'), natural: UNSPLASH('1516684345531-ac4e74c0eb43')
+};
+// Fotos de los extras: se elige por palabra clave del nombre ("Extra tocino" → tocino).
+const FOTOS_EXTRA = [
+  ['queso', '1574175679306-4c5f33146b6f'], ['pepperoni', '1768758922609-fd805f703507'], ['jamon', '1524438418049-ab2acb7aa48f'],
+  ['hongo', '1624220330071-9df752d24688'], ['tocino', '1528607929212-2636ec44253e'], ['pollo', '1531856396526-a0c8d7bd628b'],
+  ['pina', '1526333649903-b80842e5c2e0'], ['cebolla', '1575475240735-0b191257c762'], ['chile', '1597115580039-b849ed2d6398'],
+  ['aceituna', '1755404215191-abc0083c4d07'], ['bbq', '1572233052800-1394192b5404']
+];
+const sinTilde = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const ICO_BEB = {desechable: 'botella', lata: 'lata', retornable: 'botella', agua: 'agua', natural: 'agua'};
+const bebClave = g => { const t = sinTilde(g); return (BEB_GRUPOS.find(([, k]) => t.includes(k)) || [])[1] || ''; };
+const esBebGrupo = p => p && p.cat === 'bebida' && p.grupo && p.sabor;
+const bebDe = g => S.productos.filter(p => p.activo !== false && esBebGrupo(p) && p.grupo === g);
+function fotoGrupoBeb(g) {
+  const conFoto = bebDe(g).find(p => S.fotos?.[p.id]); const k = bebClave(g); const ilus = FOTOS[ICO_BEB[k] || 'lata'] || '';
+  if (conFoto) return {src: S.fotos[conFoto.id], real: true, fb: ilus};
+  if (FOTOS_BEB[k]) return {src: FOTOS_BEB[k], real: true, fb: ilus};
+  return ilus ? {src: ilus, real: false, fb: ''} : null;
+}
+function fotoExtra(e) {
+  const ilus = FOTOS.extra || '';
+  if (S.fotos?.[e.id]) return {src: S.fotos[e.id], real: true, fb: ilus};
+  const t = sinTilde(e.nombre); const hit = FOTOS_EXTRA.find(([k]) => t.includes(k));
+  return hit ? {src: UNSPLASH(hit[1]), real: true, fb: ilus} : (ilus ? {src: ilus, real: false, fb: ''} : null);
+}
+const imgHTML = (f, cls) => f ? `<span class="${cls} ${f.real ? 'real' : ''}"><img src="${f.src}" data-fb="${f.fb}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="fotoFallo(this)"></span>` : `<span class="${cls}"></span>`;
+// Orden de grupos: primero los estándar, luego los demás por nombre.
+function gruposBeb() {
+  const gs = [...new Set(S.productos.filter(p => p.activo !== false && esBebGrupo(p)).map(p => p.grupo))];
+  const ord = g => { const i = BEB_GRUPOS.findIndex(([n]) => sinTilde(n) === sinTilde(g)); return i < 0 ? 99 : i; };
+  return gs.sort((a, b) => ord(a) - ord(b) || a.localeCompare(b, 'es'));
+}
+// Presentaciones de un grupo, de menor a mayor precio.
+function presentacionesBeb(g) {
+  const m = {}; for (const p of bebDe(g)) { const k = p.presentacion || 'Única'; (m[k] = m[k] || []).push(p); }
+  return Object.entries(m).sort((a, b) => Math.min(...a[1].map(p => priceOf(p, 'U'))) - Math.min(...b[1].map(p => priceOf(p, 'U'))));
+}
+function tileGrupoBeb(g, used) {
+  const ps = bebDe(g); const disp = ps.reduce((a, p) => { const n = avail(p, 'U', used); return a + (n === Infinity ? 0 : Math.max(0, n)); }, 0);
+  const sinLimite = ps.some(p => avail(p, 'U', used) === Infinity); const agot = !sinLimite && disp <= 0;
+  const inCart = S.cart.filter(it => ps.some(p => p.id === it.id)).reduce((a, it) => a + it.qty, 0);
+  const pmin = Math.min(...ps.map(p => priceOf(p, 'U'))), pmax = Math.max(...ps.map(p => priceOf(p, 'U')));
+  return `<button class="tile ${agot ? 'out' : ''}" data-act="bebGrupo" data-v="${esc(g)}" aria-label="${esc(g)}">
+    ${inCart ? `<span class="cnt">${inCart}</span>` : ''}${imgHTML(fotoGrupoBeb(g), 'tile-img')}<span class="tile-name">${esc(g)}</span>
+    <span class="tile-meta"><b>${pmax > pmin ? '<small class="mute" style="font-weight:400">desde </small>' : ''}${money0(pmin)}</b><i>${agot ? 'agotado' : presentacionesBeb(g).length + ' present.'}</i></span></button>`;
+}
+async function bebGrupo(g) {
+  const pres = presentacionesBeb(g); if (!pres.length) return;
+  let elegida = pres.length === 1 ? pres[0][0] : null;
+  for (;;) {
+    if (!elegida) {
+      const used = consumoOf(S.cart); const f = fotoGrupoBeb(g);
+      const r = await dialog(`<div class="pk-head">${imgHTML(f, 'pk-img')}<div style="min-width:0"><h2>${esc(g)}</h2><span class="note">Elija la presentación</span></div><button class="ghost sm" data-act="m-cancel" style="margin-left:auto">Cerrar</button></div>
+        <div class="bebgrid">${pres.map(([pr, ps], i) => {
+          const disp = ps.filter(p => avail(p, 'U', used) > 0).length; const pmin = Math.min(...ps.map(p => priceOf(p, 'U')));
+          return `<button class="bebcard ${disp ? '' : 'out'}" data-act="m-val" data-v="${esc(pr)}" ${disp ? '' : 'disabled'}>${imgHTML(f, 'beb-img')}<span class="beb-scale" style="--s:${(0.55 + 0.45 * (i + 1) / pres.length).toFixed(2)}"></span>
+            <b>${esc(pr)}</b><span class="mono beb-pr">${money0(pmin)}</span><span class="note">${disp ? disp + (disp === 1 ? ' sabor disponible' : ' sabores disponibles') : 'Agotado'}</span></button>`;
+        }).join('')}</div>`, 'wide picker');
+      if (!r) return; elegida = r;
+    }
+    const used = consumoOf(S.cart);
+    const sabores = (pres.find(([pr]) => pr === elegida) || [, []])[1].map(p => ({p, n: avail(p, 'U', used)})).filter(x => x.n > 0).sort((a, b) => a.p.sabor.localeCompare(b.p.sabor, 'es'));
+    if (!sabores.length) { toast('No quedan sabores disponibles en ' + elegida + '.'); if (pres.length === 1) return; elegida = null; continue; }
+    const f = fotoGrupoBeb(g);
+    const r = await dialog(`<div class="pk-head">${imgHTML(f, 'pk-img')}<div style="min-width:0"><h2>${esc(g)} · ${esc(elegida)}</h2><span class="note">Toque el sabor y se agrega a la comanda. Solo salen los sabores con existencia.</span></div>
+        <div class="row" style="margin-left:auto;flex-wrap:nowrap">${pres.length > 1 ? '<button class="ghost sm" data-act="m-val" data-v="__volver">Volver</button>' : ''}<button class="ghost sm" data-act="m-cancel">Cerrar</button></div></div>
+      <div class="bebgrid sab">${sabores.map(({p, n}) => `<button class="bebcard sabor" data-act="m-val" data-v="${esc(p.id)}" style="--c:${saborColor(p.sabor)}"><span class="sab-dot"></span><b>${esc(p.sabor)}</b><span class="mono beb-pr">${money0(priceOf(p, 'U'))}</span><span class="note">${n === Infinity ? '' : (n > 99 ? '99+' : n) + ' disponibles'}</span></button>`).join('')}</div>`, 'wide picker');
+    if (!r) return;
+    if (r === '__volver') { elegida = null; continue; }
+    addToCart(r, 'U', ''); return;
+  }
+}
+// Color de muestra por sabor (solo decorativo).
+function saborColor(s) {
+  const t = sinTilde(s);
+  const M = [['zero', '#3a3a3a'], ['cola', '#5a2a1a'], ['naranja', '#f28c1b'], ['uva', '#6b2d8f'], ['limon', '#b5d334'], ['lima', '#7cc242'], ['fresa', '#e2384d'], ['mora', '#5b1e4a'], ['cas', '#d8c43a'],
+    ['pina', '#f2c230'], ['tamarindo', '#8a5a2b'], ['manzana', '#c8102e'], ['ginger', '#d9b26f'], ['kolita', '#d2232a'], ['con gas', '#7fc8f8'], ['sin gas', '#bfe3ff'], ['agua', '#bfe3ff'], ['maracuya', '#f4a71d'], ['sandia', '#ef4f5f'], ['guanabana', '#e8efd9']];
+  return (M.find(([k]) => t.includes(k)) || [, 'var(--accent)'])[1];
+}
+// Menú → Bebidas: crear varios sabores de una presentación de una sola vez (producto + inventario).
+async function bebNueva() {
+  if (!esDueno()) return;
+  const grupos = [...new Set([...BEB_GRUPOS.map(x => x[0]), ...gruposBeb()])];
+  const r = await dialog(`<h2>Agregar bebidas<small>Una presentación con todos sus sabores. Cada sabor queda como producto con su propio inventario.</small></h2>
+    <div class="grid2">
+      <label class="field"><span>Tipo</span><input class="inp" id="bnG" list="bnGL" placeholder="Ej. Gaseosa lata"><datalist id="bnGL">${grupos.map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
+      <label class="field"><span>Presentación</span><input class="inp" id="bnP" placeholder="Ej. 355 ml"></label>
+      <label class="field"><span>Precio con IVA (${esc(sym())})</span><input class="inp num" id="bnPr" inputmode="decimal"></label>
+      <label class="field"><span>Costo por unidad (opcional)</span><input class="inp num" id="bnC" inputmode="decimal"></label>
+      <label class="field"><span>Existencia inicial de cada sabor</span><input class="inp num" id="bnE" inputmode="numeric" value="0"></label>
+      <label class="field"><span>Mínimo para alerta</span><input class="inp num" id="bnM" inputmode="numeric" value="6"></label>
+    </div>
+    <label class="field"><span>Sabores · uno por línea</span><textarea class="inp" id="bnS" rows="5" placeholder="Cola&#10;Naranja&#10;Uva"></textarea></label>
+    <p class="note" style="margin:0">Si un sabor ya existe en esa presentación, se actualiza el precio y no se duplica. La existencia inicial se carga en ${esc(sucAct().nombre)}${S.sucursales.length > 1 ? '; en las otras sucursales queda en 0' : ''}.</p>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Agregar</button></div>`, 'wide', () => {
+      const v = id => ($('#' + id)?.value || '').trim();
+      const o = {g: v('bnG'), p: v('bnP'), pr: parseFloat(v('bnPr')), c: parseFloat(v('bnC')) || 0, e: parseFloat(v('bnE')) || 0, m: parseFloat(v('bnM')) || 0,
+        s: [...new Set(v('bnS').split(/\n|,/).map(x => x.trim()).filter(Boolean))]};
+      if (!o.g) { toast('Escriba el tipo de bebida.'); return false; }
+      if (!o.p) { toast('Escriba la presentación (ej. 355 ml).'); return false; }
+      if (!(o.pr > 0)) { toast('Escriba el precio.'); return false; }
+      if (!o.s.length) { toast('Escriba al menos un sabor.'); return false; }
+      return o;
+    });
+  if (!r) return;
+  try { await bebCrear([r]); toast(`${r.s.length} ${r.s.length === 1 ? 'sabor agregado' : 'sabores agregados'} en ${r.g} ${r.p}.`); }
+  catch (e) { console.warn(e); toast('No se pudieron agregar las bebidas.'); }
+}
+/** Crea o actualiza productos e inventario. lotes = [{g, p, pr, c, e, m, s:[sabores]}] */
+async function bebCrear(lotes) {
+  const slugB = t => sinTilde(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const filas = lotes.flatMap(o => o.s.map(sabor => ({...o, sabor, id: slugB(`${o.g} ${o.p} ${sabor}`)})));
+  await withLock(refs.inv, async () => {
+    const g = await refs.inv.get(); const inv = clone(g.exists ? g.data() : {items: {}}); inv.items = inv.items || {};
+    for (const f of filas) if (!inv.items[f.id]) inv.items[f.id] = {id: f.id, nombre: `${f.g} ${f.p} ${f.sabor}`, unidad: 'unidad', stock: f.e, minimo: f.m, costo: f.c, cat: 'Bebidas', sub: f.g};
+    await refs.inv.set(inv);
+  });
+  if (S.sucursales.length > 1) await enOtrasSucursales(items => { for (const f of filas) if (!items[f.id]) items[f.id] = {id: f.id, nombre: `${f.g} ${f.p} ${f.sabor}`, unidad: 'unidad', stock: 0, minimo: f.m, costo: f.c, cat: 'Bebidas', sub: f.g}; });
+  await withLock(refs.menu, async () => {
+    const g = await refs.menu.get(); const m = clone(g.exists ? g.data() : {productos: []}); m.productos = m.productos || [];
+    for (const f of filas) {
+      const ex = m.productos.find(p => p.id === f.id);
+      const base = {nombre: `${f.g} ${f.p} · ${f.sabor}`, cat: 'bebida', grupo: f.g, presentacion: f.p, sabor: f.sabor, icon: ICO_BEB[bebClave(f.g)] || 'lata', activo: true, tamanos: ['U'], precios: {U: r2(f.pr)}};
+      if (ex) Object.assign(ex, base, {receta: ex.receta && Object.keys(ex.receta.U || {}).length ? ex.receta : {U: {[f.id]: 1}}});
+      else m.productos.push({id: f.id, ...base, receta: {U: {[f.id]: 1}}, cabys: ''});
+    }
+    await refs.menu.set(m);
+  });
+  bit('Bebidas agregadas', lotes.map(o => `${o.g} ${o.p}: ${o.s.join(', ')}`).join(' · '));
+}
+// Juego de ejemplo (para pruebas o para arrancar rápido).
+const BEB_EJEMPLO = [
+  {g: 'Gaseosa desechable', p: '600 ml', pr: 1200, c: 650, e: 24, m: 6, s: ['Cola', 'Cola Zero', 'Naranja', 'Uva', 'Limón']},
+  {g: 'Gaseosa desechable', p: '1.5 L', pr: 2000, c: 1100, e: 12, m: 4, s: ['Cola', 'Naranja', 'Uva']},
+  {g: 'Gaseosa desechable', p: '3 L', pr: 3000, c: 1700, e: 8, m: 3, s: ['Cola', 'Naranja']},
+  {g: 'Gaseosa lata', p: '355 ml', pr: 1000, c: 500, e: 48, m: 12, s: ['Cola', 'Cola Zero', 'Naranja', 'Uva', 'Ginger Ale']},
+  {g: 'Gaseosa lata', p: '220 ml', pr: 700, c: 350, e: 24, m: 6, s: ['Cola', 'Naranja']},
+  {g: 'Gaseosa retornable', p: '2.5 L', pr: 1800, c: 950, e: 12, m: 4, s: ['Cola', 'Naranja']},
+  {g: 'Gaseosa retornable', p: '350 ml vidrio', pr: 600, c: 300, e: 24, m: 6, s: ['Cola', 'Uva', 'Kolita']},
+  {g: 'Agua', p: '600 ml', pr: 900, c: 400, e: 48, m: 12, s: ['Sin gas', 'Con gas']},
+  {g: 'Natural', p: 'Vaso 16 oz', pr: 1200, c: 400, e: 30, m: 8, s: ['Cas', 'Mora', 'Fresa', 'Piña', 'Limonada', 'Tamarindo']}
+];
+async function bebEjemplo() {
+  if (!esDueno()) return;
+  if (!(await confirmBox('Cargar bebidas de ejemplo', `<p style="margin:0">Se agregan ${BEB_EJEMPLO.reduce((a, o) => a + o.s.length, 0)} bebidas con precio, costo y existencia de ejemplo:</p><p class="note" style="margin:0">${BEB_EJEMPLO.map(o => esc(o.g + ' ' + o.p)).join(' · ')}</p><p style="margin:0">Las bebidas viejas sin sabor (por ejemplo “Gaseosa lata”) se ocultan de la venta; puede borrarlas en Menú.</p>`, 'Cargar'))) return;
+  try {
+    await bebCrear(BEB_EJEMPLO);
+    await withLock(refs.menu, async () => { const g = await refs.menu.get(); const m = clone(g.data() || {productos: []}); for (const p of m.productos || []) if (p.cat === 'bebida' && !p.sabor) p.activo = false; await refs.menu.set(m); });
+    toast('Bebidas cargadas.');
+  } catch (e) { console.warn(e); toast('No se pudieron cargar las bebidas.'); }
 }
 
 /* ---------------- promociones, descuentos y líneas de factura ---------------- */
@@ -1305,7 +1492,7 @@ async function cobrar() {
       for (const [k, q] of Object.entries(consumo)) if (inv.items[k]) inv.items[k].stock = r3(inv.items[k].stock - q);
       const now = Date.now();
       const fac = {
-        numero, serie, n, ts: now, fecha: new Date(now).toISOString(), cajero: caj, usuario: S.me?.usuario || '', uid: S.uid, tipo: S.tipo,
+        numero, serie, n, ts: now, inicio: S.cartTs && S.cartTs <= now && now - S.cartTs < 6 * 3600e3 ? S.cartTs : now, fecha: new Date(now).toISOString(), cajero: caj, usuario: S.me?.usuario || '', uid: S.uid, tipo: S.tipo,
         sucursal: suc.id, sucursalNombre: suc.nombre, caja: turno ? turno.caja : '', turno: turno ? turno.id : '',
         cliente: {nit, nombre, correo},
         items: lineasFactura(esCI ? 0 : descMonto()),
@@ -1323,7 +1510,7 @@ async function cobrar() {
     });
     const k = kitchenOf(f);
     try { await S.db.doc(sp('comandas/' + f.numero)).set(k); } catch (e) { console.warn(e); toast('La venta se guardó, pero la comanda no llegó a cocina. Avise a cocina.'); }
-    S.cart = []; S.recibido = ''; S.cliente = CLI_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
+    S.cart = []; S.cartTs = 0; S.recibido = ''; S.cliente = CLI_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
     S.lastF = f; S.busy = false;
     renderGrid(); renderTicket();
     openModal(`<div class="sheet wide"><div class="pair">
@@ -1516,7 +1703,7 @@ function receiptText(f) {
 /* ---------------- COMANDA DE COCINA ---------------- */
 const tipoL = k => (TIPOS.find(t => t[0] === k) || ['', ''])[1];
 function kitchenOf(f) {
-  return {numero: f.numero, corto: (f.tipoDoc === 'consumo' ? 'CI-' : '') + String(f.n % 1000).padStart(3, '0'), ts: f.ts, tipo: f.tipo, cliente: f.cliente?.nombre || '', cajero: f.cajero,
+  return {numero: f.numero, corto: (f.tipoDoc === 'consumo' ? 'CI-' : '') + String(f.n % 1000).padStart(3, '0'), ts: f.ts, inicio: f.inicio || f.ts, tipo: f.tipo, cliente: f.cliente?.nombre || '', cajero: f.cajero,
     items: f.items.filter(it => !it.extra).map(it => ({nombre: it.nombre, size: it.size, qty: it.qty, nota: it.nota || '', extras: it.extras || [], promo: !!it.promo, cat: prod(it.id)?.cat || ''})),
     estado: 'pendiente', tsEstado: f.ts};
 }
@@ -1546,26 +1733,28 @@ function viewCocina() {
 function renderCocina() {
   const b = $('#kBody'); if (!b) return;
   const now = Date.now();
-  $('#kSub').textContent = `${S.comandas.filter(c => c.estado === 'pendiente').length} por preparar · ${S.comandas.filter(c => c.estado === 'horno').length} en horno · ${S.comandas.filter(c => c.estado === 'lista').length} listas`;
+  const nE = e => S.comandas.filter(c => kEstado(c) === e).length;
+  $('#kSub').textContent = `${nE('pendiente')} por preparar · ${nE('alisto')} en alisto · ${nE('horno')} en horno · ${nE('empacada')} empacadas · ${nE('enviada')} en camino`;
   if (S.offline) { b.innerHTML = `<div class="banner" style="margin:0">Sin conexión con la base de datos: las comandas no pueden llegar.</div>`; return; }
   b.innerHTML = `<div class="kboard">${Object.entries(ESTADOS_K).map(([st, E]) => {
-    const list = S.comandas.filter(c => c.estado === st);
+    const list = S.comandas.filter(c => kEstado(c) === st);
     return `<section class="kcol"><h3><span>${E.l}</span><span class="mono">${list.length}</span></h3><div class="kcards">
       ${list.map(c => {
-        const min = Math.floor((now - c.ts) / 60000); const late = st !== 'lista' && min >= 20;
+        const min = Math.floor((now - c.ts) / 60000); const late = st !== 'empacada' && st !== 'enviada' && min >= 20;
+        const enFase = Math.floor((now - (c.tsEstado || c.ts)) / 60000);
         const prep = c.items.filter(i => i.cat !== 'bebida'), beb = c.items.filter(i => i.cat === 'bebida');
         return `<article class="kcard ${late ? 'late' : ''}">
           <header><b class="kno">#${esc(c.corto)}</b><span class="pill">${esc(tipoL(c.tipo))}</span><span class="mono ${late ? 'bad' : 'mute'}">${min} min</span></header>
-          <div class="kcli">${esc(c.cliente)} · ${ftime(c.ts)}</div>
+          <div class="kcli">${esc(c.cliente)} · ${ftime(c.ts)}${st !== 'pendiente' ? ` · <span class="mute">${enFase} min en esta fase</span>` : ''}</div>
           <ul>${prep.map(i => `<li><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span>${esc(i.nombre)}${(i.extras || []).map(e => `<em class="kx">+ ${esc(e)}</em>`).join('')}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></li>`).join('') || '<li class="mute">Solo bebidas</li>'}</ul>
           ${beb.length ? `<div class="kbeb">Bebidas: ${beb.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>` : ''}
-          <div class="row" style="flex-wrap:nowrap"><button class="ghost sm" data-act="prtk" data-n="${esc(c.numero)}" style="min-height:48px">Imprimir</button><button class="${st === 'lista' ? 'ghost' : 'primary'}" style="flex:1" data-act="kNext" data-n="${esc(c.numero)}">${E.btn}</button></div></article>`;
+          <div class="row" style="flex-wrap:nowrap"><button class="ghost sm" data-act="prtk" data-n="${esc(c.numero)}" style="min-height:48px">Imprimir</button><button class="${kBtnDe(c) === 'Entregada' ? 'ghost' : 'primary'}" style="flex:1" data-act="kNext" data-n="${esc(c.numero)}">${esc(kBtnDe(c))}</button></div></article>`;
       }).join('') || `<div class="kempty">${st === 'pendiente' ? 'Sin comandas nuevas' : 'Vacío'}</div>`}</div></section>`;
   }).join('')}</div>`;
 }
 async function kNext(numero) {
   const c = S.comandas.find(x => x.numero === numero); if (!c) return;
-  const nx = ESTADOS_K[c.estado]?.next; if (!nx) return;
+  const nx = kNextDe(c); if (!nx) return;
   const now = Date.now();
   try { await S.db.doc(sp('comandas/' + numero)).update({estado: nx, tsEstado: now, ['ts_' + nx]: now}); }
   catch { toast('No se pudo actualizar la comanda.'); }
@@ -1606,8 +1795,25 @@ function renderFDet() {
   if (!f) { el.innerHTML = `<div class="empty">${ico('especial')}<b>Seleccione una factura</b><span>Verá el comprobante, podrá copiarlo o anularlo.</span></div>`; return; }
   el.innerHTML = `<div class="receipt">${receiptHTML(f)}</div>
     ${f.estado === 'anulada' ? `<div class="voidbox"><b>Anulada el ${fdt(f.anulacion?.ts)}</b><span>Motivo: ${esc(f.anulacion?.motivo)}</span>${f.anulacion?.devolucion && f.anulacion.devolucion.medio !== 'no' ? `<span>Devolución: ${money(f.anulacion.devolucion.monto)} por ${esc(f.anulacion.devolucion.medio)}${f.anulacion.devolucion.salidaCaja ? ' (salida de la caja)' : ''}</span>` : ''}<span class="mute">Por ${esc(f.anulacion?.cajero || '')} · ${f.anulacion?.devuelto ? 'ingredientes devueltos al inventario' : 'ingredientes no devueltos (merma)'}</span></div>` : ''}
-    ${feBox(f)}
+    ${feBox(f)}${f.tipoDoc === 'consumo' ? '' : `<div class="febox" id="fTraza"><div class="lbl">Tiempos del pedido</div><span class="note">Cargando…</span></div>`}
     <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
+  if (f.tipoDoc !== 'consumo' && S.db) cargaTraza(f);
+}
+async function cargaTraza(f) {
+  S.trz = S.trz || {};
+  const c = S.trz[f.numero];
+  if (!c || Date.now() - c.at > 20000) {
+    try { const g = await S.db.doc(sp('comandas/' + f.numero)).get(); S.trz[f.numero] = {at: Date.now(), k: g.exists ? g.data() : null}; }
+    catch { S.trz[f.numero] = {at: Date.now(), k: null, err: true}; }
+  }
+  const el = $('#fTraza'); if (!el || S.fsel !== f.numero) return;
+  const {k, err} = S.trz[f.numero];
+  const hitos = [['Inicio del pedido', f.inicio], ['Venta · cobro · comanda', f.ts], ['Facturación (Hacienda respondió)', f.fe?.respuestaTs]];
+  if (k) hitos.push(['Alisto', k.ts_alisto], ['Horno', k.ts_horno], ['Empacada', k.ts_empacada || k.ts_lista], ...(k.tipo === 'domicilio' ? [['Enviada', k.ts_enviada]] : []), ['Entregada', k.ts_entregada]);
+  let prev = null;
+  const filas = hitos.filter(h => h[1]).sort((a, b) => a[1] - b[1]).map(([l, t]) => { const d = prev ? t - prev : null; prev = t; return `<div class="hbar" style="grid-template-columns:1fr auto auto"><span>${esc(l)}</span><span class="mono">${new Date(t).toLocaleTimeString('es-CR', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}</span><span class="n mute">${d == null ? '' : '+' + durTxt(d)}</span></div>`; }).join('');
+  const tot = k && k.ts_entregada ? dif(f.inicio || f.ts, k.ts_entregada) : null;
+  el.innerHTML = `<div class="lbl">Tiempos del pedido</div>${filas}${tot != null ? `<div class="hbar" style="grid-template-columns:1fr auto"><b>Total</b><b class="n ${tot > T_META * 60000 ? 'bad' : ''}">${durTxt(tot)}</b></div>` : `<span class="note">${err ? 'No se pudo leer la comanda.' : k ? 'Estado en cocina: ' + esc(K_ESTADO_L[k.estado] || k.estado) : 'Sin comanda registrada.'}</span>`}`;
 }
 function feBox(f) {
   if (f.tipoDoc === 'consumo' || (!f.fe && !feActiva())) return '';
@@ -1924,6 +2130,7 @@ async function comboVender(id) {
   const partes = esp.map((e, i) => { const p = prod(S.cbSel[i]); return {id: p.id, nombre: p.nombre, size: e.tam || 'U', espacio: e.nombre}; });
   const key = 'combo|' + c.id + '|' + partes.map(x => x.id + ':' + x.size).join(',') + '|' + res.nota;
   const it = S.cart.find(x => x.key === key);
+  marcaInicio();
   if (it) it.qty++; else S.cart.push({key, id: c.id, nombre: c.nombre, size: 'U', precio: +c.precio, qty: 1, nota: res.nota, extras: [], combo: {id: c.id, nombre: c.nombre, partes}});
   renderGrid(); renderTicket();
 }
@@ -2492,14 +2699,16 @@ function renderMenu() {
   const list = S.productos.filter(p => S.mcat === 'todos' || p.cat === S.mcat);
   if (!S.ready) { b.innerHTML = `<div class="empty">Cargando menú…</div>`; return; }
   if (S.mcat === 'extra' && !list.length) { b.innerHTML = `<div class="empty">${ico('extra')}<b>Todavía no hay extras</b><span>Los extras (extra queso, extra pepperoni…) salen dentro de la ventana de tamaños de cada pizza y se cobran en su propia línea.</span><button class="primary sm" data-act="extrasEjemplo">Cargar extras de ejemplo</button><button class="ghost sm" data-act="pNew">+ Crear un extra</button></div>`; return; }
+  const bebBar = S.mcat === 'bebida' && esDueno() ? `<div class="row" style="margin-bottom:12px;gap:8px"><button class="primary sm" data-act="bebNueva">+ Agregar bebidas por sabor</button>${gruposBeb().length ? '' : '<button class="ghost sm" data-act="bebEjemplo">Cargar bebidas de ejemplo</button>'}<span class="note">En Venta cada tipo sale en un solo botón: tipo → presentación → sabor. Los sabores sin existencia no aparecen.</span></div>` : '';
+  if (!list.length && bebBar) { b.innerHTML = bebBar + `<div class="empty">${ico('lata')}<b>Todavía no hay bebidas</b><span>Agregue cada presentación con sus sabores, o cargue el juego de ejemplo.</span></div>`; return; }
   if (!list.length) { b.innerHTML = `<div class="empty">${ico('queso')}<b>No hay productos aquí</b><span>Cree un producto, asígnele un icono, sus precios por tamaño y la receta que descuenta del inventario.</span><button class="primary sm" data-act="pNew">+ Producto</button></div>`; return; }
   const iva = 1 + (+S.neg.iva || 0) / 100;
-  b.innerHTML = `<div class="tbl"><table><thead><tr><th>Producto</th><th>Precios</th><th class="n">Ingred.</th><th class="n">Costo receta</th><th class="n">Margen</th><th>Estado</th><th></th></tr></thead><tbody>
+  b.innerHTML = bebBar + `<div class="tbl"><table><thead><tr><th>Producto</th><th>Precios</th><th class="n">Ingred.</th><th class="n">Costo receta</th><th class="n">Margen</th><th>Estado</th><th></th></tr></thead><tbody>
     ${list.map(p => {
       const ref = p.tamanos.includes('M') ? 'M' : p.tamanos[0];
       const cost = recipeCost(p, ref); const net = priceOf(p, ref) / iva; const mg = net > 0 ? 1 - cost / net : 0;
       const nIng = new Set(Object.values(p.receta || {}).flatMap(r => Object.keys(r).filter(k => r[k] > 0))).size;
-      return `<tr><td><div class="icell">${fotoHTML(p, 'mini-img')}<div><div class="ing-name">${esc(p.nombre)}</div><div class="note">${esc(CATNAME[p.cat] || p.cat)}</div></div></div></td>
+      return `<tr><td><div class="icell">${fotoHTML(p, 'mini-img')}<div><div class="ing-name">${esc(p.nombre)}</div><div class="note">${esc(CATNAME[p.cat] || p.cat)}${esBebGrupo(p) ? ' · ' + esc(p.grupo) + ' › ' + esc(p.presentacion || '') + ' › ' + esc(p.sabor) : ''}</div></div></div></td>
         <td class="mono" style="font-size:12.5px;white-space:nowrap">${p.tamanos.map(s => (s === 'U' ? '' : `<span class="mute">${s}</span> `) + nf(priceOf(p, s), 2)).join(' · ')}</td>
         <td class="n">${nIng}</td><td class="n">${cost ? money(cost) : '—'}${p.tamanos.length > 1 ? ` <span class="mute">(${ref})</span>` : ''}</td>
         <td class="n ${cost ? (mg < .6 ? 'warn' : '') : 'mute'}">${cost ? nf(mg * 100, 0) + '%' : '—'}</td>
@@ -2526,6 +2735,11 @@ function pForm() {
       <label class="field"><span>Nombre</span><input class="inp" id="pfN" value="${esc(PD.nombre)}" data-pf="nombre"></label>
       <div class="field"><span>Categoría</span><div class="seg sm">${CATS.map(([k, l]) => `<button data-act="pfCat" data-v="${k}" aria-pressed="${PD.cat === k}">${l}</button>`).join('')}</div></div>
     </div>
+    ${PD.cat === 'bebida' ? `<div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <label class="field"><span>Tipo de bebida (botón en Venta)</span><input class="inp" data-pf="grupo" value="${esc(PD.grupo || '')}" list="pfGL" placeholder="Ej. Gaseosa lata"><datalist id="pfGL">${[...new Set([...BEB_GRUPOS.map(x => x[0]), ...gruposBeb()])].map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
+      <label class="field"><span>Presentación</span><input class="inp" data-pf="presentacion" value="${esc(PD.presentacion || '')}" placeholder="Ej. 355 ml"></label>
+      <label class="field"><span>Sabor</span><input class="inp" data-pf="sabor" value="${esc(PD.sabor || '')}" placeholder="Ej. Naranja"></label></div>
+      <p class="note" style="margin:-6px 0 0">Con tipo y sabor, en Venta sale dentro del botón del tipo. Déjelos vacíos para un botón propio.</p>` : ''}
     <div class="field"><span>Foto del producto</span><div class="foto-ed">
       <span class="tile-img ${PD._foto || (!PD._quitar && S.fotos?.[PD.id]) ? 'real' : ''}" id="pfPrev"><img src="${PD._foto || (!PD._quitar && S.fotos?.[PD.id]) || FOTOS[PD.icon] || ''}" alt=""></span>
       <div style="display:grid;gap:6px;align-content:start"><label class="ghost sm" style="display:inline-grid;place-items:center;cursor:pointer">Tomar o subir foto<input type="file" id="pfFoto" accept="image/*" hidden></label>
@@ -2567,7 +2781,8 @@ async function pEdit(id) {
     }
     const antes = PD.id ? clone(prod(PD.id) || null) : null;
     const rows = pRows();
-    const out = {id: PD.id, nombre: PD.nombre.trim(), cat: PD.cat, icon: PD.icon, activo: PD.activo !== false, tamanos: PD.tamanos, cabys: String(PD.cabys || '').replace(/\D/g, '').slice(0, 13),
+    const bebF = PD.cat === 'bebida' && String(PD.grupo || '').trim() && String(PD.sabor || '').trim() ? {grupo: PD.grupo.trim(), presentacion: String(PD.presentacion || '').trim(), sabor: PD.sabor.trim()} : {grupo: '', presentacion: '', sabor: ''};
+    const out = {id: PD.id, nombre: PD.nombre.trim(), cat: PD.cat, icon: PD.icon, activo: PD.activo !== false, tamanos: PD.tamanos, ...bebF, cabys: String(PD.cabys || '').replace(/\D/g, '').slice(0, 13),
       precios: Object.fromEntries(PD.tamanos.map(s => [s, r2(PD.precios[s])])),
       receta: Object.fromEntries(PD.tamanos.map(s => [s, Object.fromEntries(rows.map(ing => [ing, r3(PD.receta[s]?.[ing])]).filter(([, q]) => q > 0))]))};
     await withLock(refs.menu, async () => {
@@ -2717,7 +2932,7 @@ function viewRep() {
   if (!esDueno() || S.sucursales.length < 2 || (R.suc !== '*' && !S.sucursales.some(x => x.id === R.suc))) R.suc = S.suc;
   main.innerHTML = `<section class="view">
     <div class="vhead"><h1>Reportes<small id="rSub"></small></h1>
-      <div class="seg sm" id="rTabs">${[['ventas', 'Ventas'], ['cajas', 'Cajas'], ['ingredientes', 'Ingredientes'], ['anuladas', 'Anuladas'], ['contador', 'Contador']].map(([k, l]) => `<button data-act="rtab" data-v="${k}" aria-pressed="${R.tab === k}">${l}</button>`).join('')}</div>
+      <div class="seg sm" id="rTabs">${[['ventas', 'Ventas'], ['cajas', 'Cajas'], ['ingredientes', 'Ingredientes'], ['anuladas', 'Anuladas'], ['tiempos', 'Tiempos'], ['contador', 'Contador']].map(([k, l]) => `<button data-act="rtab" data-v="${k}" aria-pressed="${R.tab === k}">${l}</button>`).join('')}</div>
       ${esDueno() && S.sucursales.length > 1 ? `<select class="inp" id="rSuc" style="width:auto" aria-label="Sucursal"><option value="*" ${R.suc === '*' ? 'selected' : ''}>Todas las sucursales</option>${S.sucursales.map(x => `<option value="${esc(x.id)}" ${R.suc === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>` : ''}
       <button class="ghost sm" data-act="rcsv">Exportar CSV</button></div>
     <div class="vhead" style="background:transparent;padding-top:10px;padding-bottom:10px">
@@ -2742,13 +2957,14 @@ async function loadRep() {
   const ids = R.suc === '*' ? S.sucursales.map(x => x.id) : [R.suc || S.suc];
   $('#rSub').textContent = `${R.suc === '*' ? 'Todas las sucursales' : sucOf(ids[0]).nombre} · ${fdate(a)} – ${fdate(b - 1)}`;
   body.innerHTML = `<div class="empty">Calculando…</div>`;
-  let facs = [], movs = [], capped = false, turnos = []; const inv = {};
+  let facs = [], movs = [], capped = false, turnos = [], coms = []; const inv = {};
   try {
     if (S.db) for (const sid of ids) {
       const fs = await S.db.collection(sp('facturas', sid)).where('ts', '>=', a).orderBy('ts').limit(1000).get();
       facs.push(...fs.docs.map(d => ({sucursal: sid, ...d.data()})).filter(f => f.ts < b)); capped = capped || fs.size >= 1000;
       const ms = await S.db.collection(sp('movimientos', sid)).where('ts', '>=', a).orderBy('ts').limit(1000).get();
       movs.push(...ms.docs.map(d => ({sucursal: sid, ...d.data()})).filter(m => m.ts < b));
+      try { const cs = await S.db.collection(sp('comandas', sid)).where('ts', '>=', a).orderBy('ts').limit(1000).get(); coms.push(...cs.docs.map(d => ({sucursal: sid, ...d.data()})).filter(k => k.ts < b)); } catch (e) { console.warn('comandas', e); }
       const ts = await S.db.collection(sp('turnos', sid)).where('ts', '>=', a).orderBy('ts').limit(500).get();
       turnos.push(...ts.docs.map(d => ({sucursal: sid, ...d.data()})).filter(t => t.ts < b));
       let items = S.inv;
@@ -2761,7 +2977,7 @@ async function loadRep() {
     facs.sort((x, y) => x.ts - y.ts); movs.sort((x, y) => x.ts - y.ts);
   } catch (e) { console.warn(e); body.innerHTML = `<div class="empty"><b>No se pudo leer la información</b><span>Revise la conexión y vuelva a intentar.</span><button class="ghost sm" data-act="rload">Reintentar</button></div>`; return; }
   turnos.sort((x, y) => y.ts - x.ts);
-  R.data = {facs, movs, a, b, capped, inv, turnos, multi: ids.length > 1, ids};
+  R.data = {facs, movs, a, b, capped, inv, turnos, coms, multi: ids.length > 1, ids};
   renderRep();
 }
 function repVentas(D) {
@@ -2888,9 +3104,56 @@ function repAnul(D) {
       ${an.map(f => `<tr><td class="mono">${esc(f.numero)}${D.multi ? `<br><span class="note">${esc(sucOf(f.sucursal).nombre)}</span>` : ''}</td><td class="mono" style="white-space:nowrap">${fdt(f.ts)}</td><td class="mono" style="white-space:nowrap">${fdt(f.anulacion?.ts)}</td><td>${esc(f.cliente?.nombre)} <span class="mute mono">${esc(f.cliente?.nit)}</span></td><td>${esc(f.anulacion?.cajero || '')}</td><td>${esc(f.anulacion?.motivo || '')}</td><td>${f.anulacion?.devuelto ? 'Devueltos' : '<span class="warn">Merma</span>'}</td><td class="n">${money(f.total)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="7">Total anulado</td><td class="n">${money(ta)}</td></tr></tfoot></table></div></div>`;
 }
+/* ---------------- TRAZABILIDAD (tiempos por fase) ---------------- */
+// Venta, cobro y comanda ocurren en el mismo instante (se cobra al tomar el pedido).
+const FASES_T = [
+  ['pedido', 'Toma de pedido', (k, f) => f && f.inicio ? f.ts - f.inicio : null],
+  ['espera', 'Espera en cocina', k => dif(k.ts, k.ts_alisto)],
+  ['alisto', 'Alisto', k => dif(k.ts_alisto, k.ts_horno)],
+  ['horno', 'Horno', k => dif(k.ts_horno, k.ts_empacada || k.ts_lista)],
+  ['salida', 'Empacada → sale/entrega', k => dif(k.ts_empacada || k.ts_lista, k.tipo === 'domicilio' ? k.ts_enviada : k.ts_entregada)],
+  ['camino', 'En camino (domicilio)', k => k.tipo === 'domicilio' ? dif(k.ts_enviada, k.ts_entregada) : null]
+];
+const T_META = 30;   // minutos: total esperado desde que se toma el pedido hasta la entrega
+const dif = (a, b) => a && b && b >= a ? b - a : null;
+const durTxt = ms => { if (ms == null) return '—'; const sg = ms / 1000; if (sg < 60) return Math.round(sg) + ' s'; const m = sg / 60; if (m < 60) return nf(m, m < 10 ? 1 : 0) + ' min'; return Math.floor(m / 60) + ' h ' + Math.round(m % 60) + ' min'; };
+const K_ESTADO_L = {pendiente: 'Por preparar', alisto: 'En alisto', horno: 'En horno', empacada: 'Empacada', lista: 'Empacada', enviada: 'En camino', entregada: 'Entregada', anulada: 'Anulada'};
+function trazaFilas(D) {
+  const facs = {}; D.facs.forEach(f => { facs[f.sucursal + '|' + f.numero] = f; });
+  return (D.coms || []).filter(k => k.estado !== 'anulada').map(k => {
+    const f = facs[k.sucursal + '|' + k.numero];
+    const d = Object.fromEntries(FASES_T.map(([id, , fn]) => [id, fn(k, f)]));
+    const ini = (f && f.inicio) || k.inicio || k.ts;
+    return {numero: k.numero, sucursal: k.sucursal, ts: k.ts, tipo: k.tipo, cliente: k.cliente, estado: k.estado, estadoL: K_ESTADO_L[k.estado] || k.estado, d,
+      total: k.estado === 'entregada' ? dif(ini, k.ts_entregada) : null, hacienda: f && f.fe && f.fe.respuestaTs ? dif(f.ts, f.fe.respuestaTs) : null};
+  });
+}
+function repTiempos(D) {
+  const filas = trazaFilas(D);
+  if (!filas.length) return `<div class="empty">${ico('pepperoni')}<b>Sin pedidos en este periodo</b><span>Cuando cocina marque cada fase (Alistar, Al horno, Empacada, Enviar, Entregada), aquí verá cuánto tarda cada una.</span></div>`;
+  const prom = (arr, key) => { const v = arr.map(t => key === 'total' ? t.total : key === 'hacienda' ? t.hacienda : t.d[key]).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const listos = filas.filter(t => t.total != null), aTiempo = listos.filter(t => t.total <= T_META * 60000).length;
+  const avg = Object.fromEntries(FASES_T.map(([id]) => [id, prom(filas, id)]));
+  const lenta = FASES_T.filter(([id]) => avg[id] != null && id !== 'pedido').sort((a, b) => avg[b[0]] - avg[a[0]])[0];
+  const mx = Math.max(1, ...Object.values(avg).filter(v => v != null));
+  const porTipo = TIPOS.map(([tk, tl]) => { const fs = filas.filter(t => t.tipo === tk); return fs.length ? `<tr><td>${esc(tl)}</td><td class="n">${fs.length}</td>${FASES_T.map(([id]) => `<td class="n">${durTxt(prom(fs, id))}</td>`).join('')}<td class="n"><b>${durTxt(prom(fs, 'total'))}</b></td></tr>` : ''; }).join('');
+  const detalle = [...filas].sort((a, b) => b.ts - a.ts).slice(0, 300);
+  return `<div class="kpis">
+      <div class="kpi"><span class="lbl">Pedidos</span><b>${filas.length}</b><em>${listos.length} entregados con todas las fases</em></div>
+      <div class="kpi"><span class="lbl">Tiempo total promedio</span><b>${durTxt(prom(filas, 'total'))}</b><em>del pedido a la entrega</em></div>
+      <div class="kpi"><span class="lbl">A tiempo (≤ ${T_META} min)</span><b class="${listos.length && aTiempo / listos.length < .8 ? 'bad' : ''}">${listos.length ? Math.round(aTiempo / listos.length * 100) + ' %' : '—'}</b><em>${aTiempo} de ${listos.length}</em></div>
+      <div class="kpi"><span class="lbl">Fase más lenta</span><b style="font-size:15px;font-family:var(--f-ui)">${lenta ? esc(lenta[1]) : '—'}</b><em>${lenta ? durTxt(avg[lenta[0]]) + ' en promedio' : ''}</em></div>
+      ${filas.some(t => t.hacienda != null) ? `<div class="kpi"><span class="lbl">Facturación Hacienda</span><b>${durTxt(prom(filas, 'hacienda'))}</b><em>del cobro a la respuesta</em></div>` : ''}</div>
+    <div class="sect"><h3>Promedio por fase</h3><p class="note" style="margin:0 0 8px">Venta, cobro y comanda pasan en el mismo momento: al cobrar, la comanda llega a cocina.</p>
+      <div class="bars">${FASES_T.map(([id, l]) => `<div class="hbar"><span>${esc(l)}</span><span class="track"><i style="width:${avg[id] == null ? 0 : (avg[id] / mx * 100).toFixed(1)}%"></i></span><span class="n">${durTxt(avg[id])}</span></div>`).join('')}</div></div>
+    <div class="sect"><h3>Por tipo de pedido</h3><div class="tbl"><table><thead><tr><th>Tipo</th><th class="n">Pedidos</th>${FASES_T.map(x => `<th class="n">${esc(x[1])}</th>`).join('')}<th class="n">Total</th></tr></thead><tbody>${porTipo}</tbody></table></div></div>
+    <div class="sect"><h3>Detalle por pedido</h3><div class="tbl"><table><thead><tr><th>Pedido</th><th>Hora</th><th>Tipo</th><th>Cliente</th><th>Estado</th>${FASES_T.map(x => `<th class="n">${esc(x[1])}</th>`).join('')}<th class="n">Total</th></tr></thead><tbody>
+      ${detalle.map(t => `<tr><td class="mono">${esc(t.numero)}${D.multi ? `<br><span class="note">${esc(sucOf(t.sucursal).nombre)}</span>` : ''}</td><td class="mono" style="white-space:nowrap">${fdate(t.ts)} ${ftime(t.ts)}</td><td>${esc(tipoL(t.tipo))}</td><td>${esc(t.cliente || '')}</td><td>${t.estado === 'entregada' ? 'Entregada' : `<span class="pill warn">${esc(t.estadoL)}</span>`}</td>${FASES_T.map(([id]) => `<td class="n">${durTxt(t.d[id])}</td>`).join('')}<td class="n ${t.total != null && t.total > T_META * 60000 ? 'bad' : ''}"><b>${durTxt(t.total)}</b></td></tr>`).join('')}
+      </tbody></table></div>${filas.length > 300 ? '<p class="note">Se muestran los 300 pedidos más recientes; el archivo exportado los trae todos.</p>' : ''}</div>`;
+}
 function renderRep() {
   const body = $('#rBody'); const D = S.rep.data; if (!body || !D) return;
-  const fn = {ventas: repVentas, cajas: repCajas, ingredientes: repIng, anuladas: repAnul, contador: repContador}[S.rep.tab] || repVentas;
+  const fn = {ventas: repVentas, cajas: repCajas, ingredientes: repIng, anuladas: repAnul, tiempos: repTiempos, contador: repContador}[S.rep.tab] || repVentas;
   body.innerHTML = (S.offline ? `<div class="banner" style="margin:0 0 14px">Sin conexión con la base de datos: los reportes están vacíos.</div>` : '') + fn(D) + (D.capped ? `<p class="note">El periodo tiene más de 1000 facturas; se muestran las primeras 1000. Use un rango más corto.</p>` : '');
 }
 async function exportCSV() {
@@ -2910,6 +3173,10 @@ async function exportCSV() {
     Object.entries(D.inv).forEach(([k, i]) => rows.push([i.nombre, i.unidad, r3(cons[k] || 0), i.stock, i.minimo, i.costo, r2((cons[k] || 0) * (i.costo || 0))]));
   } else if (tab === 'contador') {
     rows = contadorFilas(D).det;
+  } else if (tab === 'tiempos') {
+    const min = ms => ms == null ? '' : r2(ms / 60000);
+    rows.push(['Sucursal', 'Pedido', 'Fecha', 'Hora', 'Tipo', 'Cliente', 'Estado', ...FASES_T.map(x => x[1] + ' (min)'), 'Total (min)', 'Facturación Hacienda (s)']);
+    trazaFilas(D).forEach(t => rows.push([sucOf(t.sucursal).nombre, t.numero, fdate(t.ts), ftime(t.ts), tipoL(t.tipo), t.cliente, t.estadoL, ...FASES_T.map(x => min(t.d[x[0]])), min(t.total), t.hacienda == null ? '' : Math.round(t.hacienda / 1000)]));
   } else {
     rows.push(['Sucursal', 'Factura', 'Emitida', 'Anulada', 'Cédula', 'Cliente', 'Autorizó', 'Motivo', 'Ingredientes devueltos', 'Total']);
     D.facs.filter(f => f.estado === 'anulada').forEach(f => rows.push([sucOf(f.sucursal).nombre, f.numero, fdt(f.ts), fdt(f.anulacion?.ts), f.cliente?.nit, f.cliente?.nombre, f.anulacion?.cajero, f.anulacion?.motivo, f.anulacion?.devuelto ? 'Sí' : 'No', f.total]));
@@ -3417,6 +3684,7 @@ const ACT = {
   cargarExcel: () => cargarExcel(),
   repXlsx: () => contadorExcel(),
   pkExtra: t => t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') !== 'true'),
+  bebGrupo: t => bebGrupo(t.dataset.v), bebNueva: () => bebNueva(), bebEjemplo: () => bebEjemplo(),
   pkNota: t => { const i = $('#pkNota'); const v = t.dataset.v; let parts = i.value.split(',').map(x => x.trim()).filter(Boolean);
     if (parts.includes(v)) parts = parts.filter(x => x !== v); else parts.push(v); i.value = parts.join(', '); t.setAttribute('aria-pressed', parts.includes(v)); },
   copyk: t => { const f = S.lastF && S.lastF.numero === t.dataset.n ? S.lastF : S.facturas.find(x => x.numero === t.dataset.n); if (f) { navigator.clipboard.writeText(kitchenText(kitchenOf(f))).then(() => toast('Comanda copiada.'), () => toast('No se pudo copiar.')); } },
@@ -3425,7 +3693,7 @@ const ACT = {
   inc: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it) it.qty++; renderGrid(); renderTicket(); },
   dec: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it && --it.qty <= 0) S.cart = S.cart.filter(i => i !== it); renderGrid(); renderTicket(); },
   cyc: t => cycleSize(t.dataset.k),
-  clear: () => { S.cart = []; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
+  clear: () => { S.cart = []; S.cartTs = 0; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
   tipo: t => { S.tipo = t.dataset.v; renderTicket(); },
   pago: t => { S.pago = t.dataset.v; S.recibido = ''; renderTicket(); },
   srvToggle: () => { S.servicio = !S.servicio; renderTicket(); },
