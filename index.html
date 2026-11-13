@@ -688,10 +688,21 @@ const FOTOS_WEB = {
   alitas: UNSPLASH('1567620832903-9fc6debc209f'),
   agua: UNSPLASH('1561041695-d2fadf9f318c')
 };
+// Fotos por palabra del nombre, para bebidas, complementos y combos que no tienen foto propia (se cambian subiendo la suya).
+const FOTOS_NOMBRE = [   // el orden importa: primero la comida (un combo «calzone + té» usa la foto del calzone)
+  ['2 pizzas', '1513104890138-7c749659a591'], ['combo familiar', '1513104890138-7c749659a591'], ['slice', '1559183533-ee5f4826d3db'], ['calzone', '1753656681797-3234c89d6d4d'], ['baked roll', '1753656681797-3234c89d6d4d'], ['supreme baked', '1753656681797-3234c89d6d4d'],
+  ['pan de ajo', '1556008531-57e6eefc7be4'], ['bread stick', '1769521001298-f0415c53e013'], ['breadstick', '1769521001298-f0415c53e013'],
+  ['te frio', '1568309344402-e55115e869fe'], ['tropical', '1600271886742-f049cd451bba'], ['jugo', '1600271886742-f049cd451bba'], ['natural', '1516684345531-ac4e74c0eb43'],
+  ['coca', '1568657624422-1b8713e79461'], ['gaseosa', '1568657624422-1b8713e79461'], ['fanta', '1568657624422-1b8713e79461'], ['refresco', '1568657624422-1b8713e79461'], ['lata', '1654847675037-c7f0bab94aab'],
+  ['agua', '1550505095-81378a674395'], ['salsa', '1572233052800-1394192b5404']
+];
+const fotoNombre = t => { const n = String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const h = FOTOS_NOMBRE.find(([k]) => n.includes(k)); return h ? UNSPLASH(h[1]) : ''; };
 const fotoDe = p => {
   if (!p) return null;
   const ilus = FOTOS[p.icon] || '';
   if (S.fotos?.[p.id]) return {src: S.fotos[p.id], real: true, fb: ilus};
+  const porNombre = p.cat !== 'pizza' && p.cat !== 'extra' ? fotoNombre(p.nombre + ' ' + (p.grupo || '')) : '';
+  if (porNombre) return {src: porNombre, real: true, fb: ilus};
   if (FOTOS_WEB[p.icon]) return {src: FOTOS_WEB[p.icon], real: true, fb: ilus};
   return ilus ? {src: ilus, real: false, fb: ''} : null;
 };
@@ -1078,8 +1089,9 @@ function renderSizes() {
 function renderGrid() {
   const g = $('#grid'); if (!g) return;
   if (!S.ready) { g.innerHTML = `<div class="empty" style="grid-column:1/-1">${ico('especial')}<span>Cargando menú…</span></div>`; return; }
-  if (S.cat === 'combo') { g.innerHTML = combosGrid(); return; }
+  const conEspacios = S.cat === 'combo' ? combosGrid() : '';
   const list = S.productos.filter(p => p.activo !== false && p.cat === S.cat && !esBebGrupo(p));
+  if (S.cat === 'combo' && !list.length) { g.innerHTML = conEspacios; return; }
   const grupos = S.cat === 'bebida' ? botonesBeb() : [];
   if (!list.length && !grupos.length) {
     g.innerHTML = `<div class="empty" style="grid-column:1/-1">${ico(S.cat === 'bebida' ? 'lata' : S.cat === 'pizza' ? 'queso' : 'pan')}<b>No hay ${CATNAME[S.cat].toLowerCase()} en el menú</b><span>Agréguelas en la sección Menú, con su precio y su receta.</span>${S.productos.length === 0 && S.db && esDueno() ? `<button class="primary sm" data-act="seed">Cargar menú inicial de SPANKY'S</button>` : ''}${esDueno() ? `<button class="ghost sm" data-act="go" data-v="menu">Ir a Menú</button>` : '<span class="note">El dueño del negocio debe cargar el menú.</span>'}</div>`;
@@ -1087,7 +1099,7 @@ function renderGrid() {
   }
   const used = consumoOf(S.cart);
   const aviso = S.cat === 'bebida' && !grupos.length && esDueno() && S.db && !enProduccion() ? `<div class="banner" style="grid-column:1/-1;margin:0;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>Bebidas por tipo, presentación y sabor.</b> Cargue el juego de ejemplo (gaseosas desechables, latas 355 y 220 ml, retornables, agua y naturales) y después ajústelo en Menú → Bebidas.</span><button class="primary sm" data-act="bebEjemplo">Cargar bebidas de ejemplo</button></div>` : '';
-  g.innerHTML = aviso + grupos.map(b => tilePresBeb(b, used)).join('') + list.map(p => {
+  g.innerHTML = (S.cat === 'combo' && S.combos?.some(c => c.activo !== false) ? conEspacios : '') + aviso + grupos.map(b => tilePresBeb(b, used)).join('') + list.map(p => {
     const sz = p.tamanos.includes('M') ? 'M' : p.tamanos[0];
     const n = avail(p, sz, used);
     const inCart = S.cart.filter(it => it.id === p.id).reduce((a, it) => a + it.qty, 0);
@@ -1267,6 +1279,7 @@ function fotoGrupoBeb(g) {
   const conFoto = bebDe(g).find(p => S.fotos?.[p.id]); const k = bebClave(g); const ilus = FOTOS[ICO_BEB[k] || 'lata'] || '';
   if (conFoto) return {src: S.fotos[conFoto.id], real: true, fb: ilus};
   if (FOTOS_BEB[k]) return {src: FOTOS_BEB[k], real: true, fb: ilus};
+  const pn = fotoNombre(g + ' ' + bebDe(g).map(p => p.nombre).join(' ')); if (pn) return {src: pn, real: true, fb: ilus};
   return ilus ? {src: ilus, real: false, fb: ''} : null;
 }
 function fotoExtra(e) {
@@ -2281,11 +2294,11 @@ function leerPlantilla(XLSX, wb) {
     ings[id] = {nombre, unidad, stock: r3(num(r[2]) || 0), minimo: r3(num(r[3]) || 0), costo: (num(r[4]) || 0) / UNITS[unidad].f, cat: txt(r[5]), sub: txt(r[6]), vence: venc, diasMin: Math.round(num(r[8]) || DIAS_MIN_DEF)};
     porNombre[nombre.toLowerCase()] = id;
   });
-  const CATK = {pizza: 'pizza', pizzas: 'pizza', bebida: 'bebida', bebidas: 'bebida', complemento: 'complemento', complementos: 'complemento', extra: 'extra', extras: 'extra'};
+  const CATK = {pizza: 'pizza', pizzas: 'pizza', bebida: 'bebida', bebidas: 'bebida', complemento: 'complemento', complementos: 'complemento', extra: 'extra', extras: 'extra', combo: 'combo', combos: 'combo'};
   const prods = []; const pPorNombre = {};
   hoja('Productos').forEach((r, i) => {
     const nombre = txt(r[0]); if (!nombre) return; const fila = i + 5;
-    const cat = CATK[slug(r[1])]; if (!cat) { errores.push(`Productos, fila ${fila} (${nombre}): la categoría debe ser Pizza, Bebida, Complemento o Extra.`); return; }
+    const cat = CATK[slug(r[1])]; if (!cat) { errores.push(`Productos, fila ${fila} (${nombre}): la categoría debe ser Pizza, Bebida, Complemento, Combo o Extra.`); return; }
     if (pPorNombre[nombre.toLowerCase()]) { errores.push(`Productos, fila ${fila}: «${nombre}» está repetido.`); return; }
     const precios = {}; let tamanos;
     if (cat === 'pizza') { PIZZA_SIZES.forEach((s, j) => { const v = num(r[2 + j]); if (v > 0) precios[s] = r2(v); }); tamanos = PIZZA_SIZES.filter(s => precios[s]); if (!tamanos.length) { const u = num(r[6]); if (u > 0) { precios.U = r2(u); tamanos = ['U']; } } }
@@ -2865,15 +2878,16 @@ function renderMenu() {
   $('#mCats').innerHTML = [['todos', 'Todos'], ...CATS, ['combos', 'Combos'], ['promos', 'Promos']].map(([k, l]) => `<button data-act="mcat" data-v="${k}" aria-pressed="${S.mcat === k}">${l}</button>`).join('');
   $('#mSub').textContent = `${S.productos.length} productos · costo y margen calculados con el costo de cada ingrediente`;
   if (S.mcat === 'promos') { $('#mSub').textContent = 'Promociones de regalo y descuentos'; return renderPromos(b); }
-  if (S.mcat === 'combos') { $('#mSub').textContent = 'Combos de precio fijo con productos a escoger'; return renderCombos(b); }
-  const list = S.productos.filter(p => S.mcat === 'todos' || p.cat === S.mcat);
+  const enCombos = S.mcat === 'combos';
+  if (enCombos) { $('#mSub').textContent = 'Combos de precio fijo: con productos a escoger, o con receta fija'; renderCombos(b); if (!S.productos.some(p => p.cat === 'combo')) return; }
+  const list = S.productos.filter(p => S.mcat === 'todos' || p.cat === (enCombos ? 'combo' : S.mcat));
   if (!S.ready) { b.innerHTML = `<div class="empty">Cargando menú…</div>`; return; }
   if (S.mcat === 'extra' && !list.length) { b.innerHTML = `<div class="empty">${ico('extra')}<b>Todavía no hay extras</b><span>Los extras (extra queso, extra pepperoni…) salen dentro de la ventana de tamaños de cada pizza y se cobran en su propia línea.</span>${enProduccion() ? '' : `<button class="primary sm" data-act="extrasEjemplo">Cargar extras de ejemplo</button>`}<button class="ghost sm" data-act="pNew">+ Crear un extra</button></div>`; return; }
   const bebBar = S.mcat === 'bebida' && esDueno() ? `<div class="row" style="margin-bottom:12px;gap:8px"><button class="primary sm" data-act="bebNueva">+ Agregar bebidas por sabor</button>${gruposBeb().length || enProduccion() ? '' : '<button class="ghost sm" data-act="bebEjemplo">Cargar bebidas de ejemplo</button>'}<span class="note">En Venta cada presentación sale en su propio botón con su precio (ej. Gaseosa lata 220 ml); al tocarlo se elige el sabor. Los sabores sin existencia no aparecen.</span></div>` : '';
   if (!list.length && bebBar) { b.innerHTML = bebBar + `<div class="empty">${ico('lata')}<b>Todavía no hay bebidas</b><span>Agregue cada presentación con sus sabores${enProduccion() ? '' : ', o cargue el juego de ejemplo'}.</span></div>`; return; }
   if (!list.length) { b.innerHTML = `<div class="empty">${ico('queso')}<b>No hay productos aquí</b><span>Cree un producto, asígnele un icono, sus precios por tamaño y la receta que descuenta del inventario.</span><button class="primary sm" data-act="pNew">+ Producto</button></div>`; return; }
   const iva = 1 + (+S.neg.iva || 0) / 100;
-  b.innerHTML = bebBar + `<div class="tbl"><table><thead><tr><th>Producto</th><th>Precios</th><th class="n">Ingred.</th><th class="n">Costo receta</th><th class="n">Margen</th><th>Estado</th><th></th></tr></thead><tbody>
+  const tablaHTML = `<div class="tbl"><table><thead><tr><th>Producto</th><th>Precios</th><th class="n">Ingred.</th><th class="n">Costo receta</th><th class="n">Margen</th><th>Estado</th><th></th></tr></thead><tbody>
     ${list.map(p => {
       const ref = p.tamanos.includes('M') ? 'M' : p.tamanos[0];
       const cost = recipeCost(p, ref); const net = priceOf(p, ref) / iva; const mg = net > 0 ? 1 - cost / net : 0;
@@ -2886,10 +2900,12 @@ function renderMenu() {
         <td><div class="acts"><button class="ghost sm" data-act="pEdit" data-id="${esc(p.id)}">Editar</button></div></td></tr>`;
     }).join('')}</tbody></table></div>
     <p class="note">El margen se calcula sobre el precio sin IVA. Un margen bajo el 60% aparece marcado.</p>`;
+  if (enCombos) b.insertAdjacentHTML('beforeend', `<h3 style="margin:22px 0 4px">Combos de receta fija</h3><p class="note" style="margin:0 0 10px">Se venden como un producto: precio único y una receta que rebaja todo lo que lleva (ej. 2 pizzas grandes, o calzone + té + salsa). Se crean con + Producto, categoría Combo.</p>` + tablaHTML);
+  else b.innerHTML = bebBar + tablaHTML;
 }
 let PD = null; // borrador del producto en edición
 function pDraftNew() {
-  const cat = CATNAME[S.mcat] && S.mcat !== 'combo' ? S.mcat : 'pizza';
+  const cat = S.mcat === 'combos' ? 'combo' : CATNAME[S.mcat] ? S.mcat : 'pizza';
   const t = cat === 'pizza' ? PIZZA_SIZES.slice() : ['U'];
   return {id: '', nombre: '', cat, icon: cat === 'pizza' ? 'especial' : cat === 'bebida' ? 'lata' : cat === 'extra' ? 'extra' : 'pan', activo: true, tamanos: t, precios: {}, receta: Object.fromEntries(t.map(s => [s, {}]))};
 }
@@ -2903,7 +2919,7 @@ function pForm() {
   return `
     <div class="grid2">
       <label class="field"><span>Nombre</span><input class="inp" id="pfN" value="${esc(PD.nombre)}" data-pf="nombre"></label>
-      <div class="field"><span>Categoría</span><div class="seg sm">${CATS.map(([k, l]) => `<button data-act="pfCat" data-v="${k}" aria-pressed="${PD.cat === k}">${l}</button>`).join('')}</div></div>
+      <div class="field"><span>Categoría</span><div class="seg sm">${[...CATS, ['combo', 'Combo']].map(([k, l]) => `<button data-act="pfCat" data-v="${k}" aria-pressed="${PD.cat === k}">${l}</button>`).join('')}</div></div>
     </div>
     ${PD.cat === 'bebida' ? `<div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
       <label class="field"><span>Tipo de bebida (botón en Venta)</span><input class="inp" data-pf="grupo" value="${esc(PD.grupo || '')}" list="pfGL" placeholder="Ej. Gaseosa lata"><datalist id="pfGL">${[...new Set([...BEB_GRUPOS.map(x => x[0]), ...gruposBeb()])].map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
