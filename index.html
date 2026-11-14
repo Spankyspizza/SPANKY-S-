@@ -469,6 +469,8 @@ th{color:var(--brand)}
 .tk-opts{display:flex;gap:6px;flex-wrap:wrap}.tk-opts .on,.tk-opts [aria-pressed="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
 .consumo-box{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:#F4ECFA;border:1px solid #D9C2EC;font-size:13px}.consumo-box span{color:var(--mute)}
 .kcard em.kx,.kit-it em{display:block}
+.sinx{color:#C62828!important;font-weight:800!important;font-style:normal!important}
+.exbtn.sinb{border-color:#C62828;color:#C62828;margin-left:4px}
 .exbtn{display:inline-block;margin-top:4px;padding:3px 10px;border:1px dashed var(--brand);border-radius:999px;background:none;color:var(--brand);font-size:11.5px;font-weight:700;min-height:26px}
 .ajwrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:20px;align-items:start;max-width:1040px}
 .ajnav{display:grid;gap:6px;position:sticky;top:0}
@@ -722,13 +724,17 @@ function fotoFallo(img) {
 const fotoHTML = (p, cls = 'tile-img') => { const f = fotoDe(p); return f ? `<span class="${cls} ${f.real ? 'real' : ''}"><img src="${f.src}" data-fb="${f.fb}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="fotoFallo(this)"></span>` : ico(p.icon); };
 const priceOf = (p, sz) => +((p.precios || {})[sz] ?? 0);
 const recipeOf = (p, sz) => (p.receta || {})[sz] || {};
-function consumoOf(items) {
-  const c = {};
-  const sum = (p, sz, n) => { if (p) for (const [ing, q] of Object.entries(recipeOf(p, sz))) c[ing] = r3((c[ing] || 0) + (+q || 0) * n); };
+// Empaques: cajas, bolsas o ingredientes de categoría Empaque. En órdenes "Comer aquí" no se rebajan.
+const esEmpaque = i => !!i && (/^(caja|bolsa|empaque)/i.test((i.nombre || '').trim()) || /empaque/i.test(i.cat || ''));
+function consumoOf(items, tipo) {
+  const c = {}; const local = tipo === 'mesa';
+  const sum = (p, sz, n, sin) => { if (p) for (const [ing, q] of Object.entries(recipeOf(p, sz))) { if (sin && sin.has(ing)) continue; if (local && esEmpaque(S.inv[ing])) continue; c[ing] = r3((c[ing] || 0) + (+q || 0) * n); } };
   for (const it of items) {
     if (it.combo) { for (const x of it.combo.partes || []) sum(prod(x.id), x.size, it.qty); continue; }
-    if (it.mitad) { sum(prod(it.id), it.size, it.qty / 2); sum(prod(it.mitad.id), it.size, it.qty / 2); }
-    else sum(prod(it.id), it.size, it.qty);
+    // Lo que el cliente pidió "sin" (ej. sin cebolla) no se rebaja del inventario.
+    const sin = (it.sin || []).length ? new Set(it.sin.map(x => x.id)) : null;
+    if (it.mitad) { sum(prod(it.id), it.size, it.qty / 2, sin); sum(prod(it.mitad.id), it.size, it.qty / 2, sin); }
+    else sum(prod(it.id), it.size, it.qty, sin);
     for (const e of it.extras || []) sum(prod(e.id), 'U', it.qty * (e.q || 1));
   }
   return c;
@@ -746,6 +752,9 @@ const extrasSum = it => (it.extras || []).reduce((a, e) => a + (+e.precio || 0) 
 // Clave de los extras de una línea (incluye la cantidad de cada uno: doble queso ≠ queso).
 const exKey = exs => (exs || []).map(e => e.id + ((e.q || 1) > 1 ? 'x' + e.q : '')).sort().join(',');
 const exTxt = e => ((e.q || 1) > 1 ? e.q + '× ' : '') + e.nombre;
+// Ingredientes que el cliente pidió quitar (no cambian el precio; no se rebajan del inventario).
+const sinK = it => (it.sin || []).length ? '|sin:' + it.sin.map(x => x.id).sort().join(',') : '';
+const sinTxt = arr => (arr || []).length ? 'SIN ' + arr.join(', ') : '';
 const lineUnit = it => r2(it.precio + extrasSum(it));
 const cartBruto = () => r2(S.cart.reduce((a, it) => a + lineUnit(it) * it.qty, 0));
 const descMonto = () => { const d = S.desc; if (!d) return 0; const b = cartBruto(); return r2(Math.min(b, d.modo === '%' ? b * (+d.valor || 0) / 100 : +d.valor || 0)); };
@@ -1129,7 +1138,7 @@ function renderTicket() {
     const p = prod(it.id); const multi = p && p.tamanos.length > 1;
     return `<div class="line ${it.promo ? 'promo' : ''}">
       <div class="qty"><button data-act="dec" data-k="${esc(it.key)}" aria-label="Quitar uno">−</button><span>${it.qty}</span><button data-act="inc" data-k="${esc(it.key)}" aria-label="Agregar uno">+</button></div>
-      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${it.combo ? it.combo.partes.map(x => `<em class="ext">${esc(x.espacio)}: ${esc(x.nombre)}${x.size !== 'U' ? ' ' + x.size : ''}</em>`).join('') : ''}${(it.extras || []).map(e => `<em class="ext">+ ${esc(exTxt(e))} ${money0(e.precio * (e.q || 1))}</em>`).join('')}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}${p?.cat === 'pizza' && !it.promo ? `<button class="exbtn" data-act="lineExtras" data-k="${esc(it.key)}">${(it.extras || []).length ? 'Cambiar extras' : '+ Extra'}</button>` : ''}</div>
+      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${it.combo ? it.combo.partes.map(x => `<em class="ext">${esc(x.espacio)}: ${esc(x.nombre)}${x.size !== 'U' ? ' ' + x.size : ''}</em>`).join('') : ''}${(it.extras || []).map(e => `<em class="ext">+ ${esc(exTxt(e))} ${money0(e.precio * (e.q || 1))}</em>`).join('')}${(it.sin || []).length ? `<em class="sinx">${esc(sinTxt(it.sin.map(x => x.nombre)))}</em>` : ''}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}${p?.cat === 'pizza' && !it.promo ? `<button class="exbtn" data-act="lineExtras" data-k="${esc(it.key)}">${(it.extras || []).length ? 'Cambiar extras' : '+ Extra'}</button>` : ''}${!it.combo && ingsLinea(it).length ? `<button class="exbtn sinb" data-act="lineSin" data-k="${esc(it.key)}">${(it.sin || []).length ? 'Cambiar "sin"' : '− Sin…'}</button>` : ''}</div>
       <div class="line-tot">${it.promo ? '<span class="pill ok">Gratis</span>' : money0(lineUnit(it) * it.qty)}</div></div>`;
   }).join('') + promoSugerencias().map(x => `<div class="promo-sug"><span>🎁 <b>${esc(x.pr.nombre)}</b><br><small>Puede agregar ${x.faltan} × ${esc(prod(x.pr.regalo.prod)?.nombre || 'regalo')} gratis</small></span><button class="primary sm" data-act="promoAdd" data-id="${esc(x.pr.id)}">Agregar</button></div>`).join('')
     : `<div class="tk-empty">${ico('pepperoni')}<span>Toque una pizza, elija el tamaño<br>y se agrega a esta comanda.</span></div>`;
@@ -1149,7 +1158,7 @@ function renderTicket() {
         <label class="check" style="grid-column:1/-1;margin:0"><input type="checkbox" id="tkFE" ${S.factura ? 'checked' : ''}><span><b>Factura electrónica</b> <span class="note">${S.factura ? '· a nombre del cliente, con IVA desglosado' : '· sin marcar: tiquete simple, no va a Hacienda'}</span></span></label>
         ${S.factura ? `<label class="field"><span>Cédula</span><input class="inp mono" id="tkNit" value="${esc(S.cliente.nit)}" autocomplete="off" inputmode="numeric" placeholder="9, 10 u 11–12 dígitos"></label>
         <label class="field"><span>Nombre o razón social</span><input class="inp" id="tkNom" value="${esc(S.cliente.nombre === 'Cliente contado' ? '' : S.cliente.nombre)}" autocomplete="off"></label>
-        <label class="field" style="grid-column:1/-1"><span>Correo del cliente</span><input class="inp" id="tkMail" type="email" value="${esc(S.cliente.correo || '')}" autocomplete="off" placeholder="Ahí le llega la factura"></label>` : ''}
+        <label class="field" style="grid-column:1/-1"><span>Correo del cliente</span><input class="inp" id="tkMail" type="email" value="${esc(S.cliente.correo || '')}" autocomplete="off" placeholder="Ahí le llega la factura"></label>` : `<label class="field" style="grid-column:1/-1"><span>Nombre del cliente <b class="bad">*</b></span><input class="inp" id="tkNomC" value="${esc(S.nomC || '')}" autocomplete="off" placeholder="Sale en la comanda y en el tiquete"></label>`}
       </div>
       <div class="seg sm" role="group" aria-label="Forma de pago">${PAGOS.map(([k, l]) => `<button data-act="pago" data-v="${k}" aria-pressed="${S.pago === k}">${l}</button>`).join('')}</div>`}
       ${S.pago === 'mixto' && !S.consumo ? mixHTML() : ''}
@@ -1171,7 +1180,7 @@ function updateTotals() {
   const mr = $('#mxRes'); if (mr) mr.innerHTML = pc.exceso ? `<span class="bad">Los montos pasan el total por ${money(pc.exceso)}</span>` : pc.partes.map(x => `${PAGO_L[x.medio]} <b>${money(x.monto)}</b>`).join(' · ');
   const tot = $('#tkTot');
   const dm = descMonto();
-  if (tot && S.consumo) tot.innerHTML = `<dt>Valor de menú (no se cobra)</dt><dd>${money(cartBruto())}</dd><dt>Costo de ingredientes</dt><dd>${money(costoDe(consumoOf(S.cart)))}</dd>`;
+  if (tot && S.consumo) tot.innerHTML = `<dt>Valor de menú (no se cobra)</dt><dd>${money(cartBruto())}</dd><dt>Costo de ingredientes</dt><dd>${money(costoDe(consumoOf(S.cart, S.tipo)))}</dd>`;
   else if (tot) tot.innerHTML = `${dm ? `<dt>Antes de descuento</dt><dd>${money(cartBruto())}</dd><dt>Descuento ${esc(S.desc.nombre)}</dt><dd class="bad">−${money(dm)}</dd>` : ''}${S.factura && !S.consumo ? `<dt>Subtotal sin IVA</dt><dd>${money(sub)}</dd><dt>IVA ${nf(S.neg.iva, 2)}%</dt><dd>${money(iva)}</dd>` : ''}${srv ? `<dt>Servicio 10 %</dt><dd>${money(srv)}</dd>` : ''}
     <dt class="big">Total</dt><dd class="big">${money(total)}</dd>
     ${enEf && S.cart.length && due > 0 ? `<dt>Cambio</dt><dd class="chg">${rec < due - 0.001 ? '<span class="bad">falta ' + money(due - rec) + '</span>' : money(cambio)}</dd>` : ''}`;
@@ -1227,7 +1236,7 @@ function cycleSize(key) {
   const p2 = it.mitad ? prod(it.mitad.id) : null;
   const tams = p2 ? p.tamanos.filter(s => p2.tamanos.includes(s)) : p.tamanos;
   const sz = tams[(tams.indexOf(it.size) + 1) % tams.length];
-  const nk = p.id + '|' + sz + '|' + (it.nota || '') + '|' + exKey(it.extras) + (p2 ? '|m:' + p2.id : ''); const other = S.cart.find(i => i.key === nk);
+  const nk = p.id + '|' + sz + '|' + (it.nota || '') + '|' + exKey(it.extras) + (p2 ? '|m:' + p2.id : '') + sinK(it); const other = S.cart.find(i => i.key === nk);
   if (other && other !== it) { other.qty += it.qty; S.cart = S.cart.filter(i => i !== it); }
   else { it.size = sz; it.key = nk; it.precio = p2 ? Math.max(priceOf(p, sz), priceOf(p2, sz)) : priceOf(p, sz); }
   renderGrid(); renderTicket();
@@ -1257,9 +1266,35 @@ async function lineExtras(key) {
     () => [...document.querySelectorAll('#lxChips .xcard')].map(c => [c.dataset.v, +c.dataset.q || 0]).filter(x => x[1] > 0));
   if (!res) return;
   const extras = res.map(([x, q]) => [prod(x), q]).filter(x => x[0]).map(([e, q]) => ({id: e.id, nombre: e.nombre, precio: priceOf(e, 'U'), ...(q > 1 ? {q} : {})}));
-  const nk = it.id + '|' + it.size + '|' + (it.nota || '') + '|' + exKey(extras) + (it.mitad ? '|m:' + it.mitad.id : '');
+  const nk = it.id + '|' + it.size + '|' + (it.nota || '') + '|' + exKey(extras) + (it.mitad ? '|m:' + it.mitad.id : '') + sinK(it);
   const otra = S.cart.find(i => i.key === nk && i !== it);
   if (otra) { otra.qty += it.qty; S.cart = S.cart.filter(i => i !== it); } else { it.extras = extras; it.key = nk; }
+  renderGrid(); renderTicket();
+}
+
+// Quitar ingredientes de una línea (ej. calzone sin chile y sin cebolla). Se anota en la comanda y en el
+// tiquete, y esos ingredientes no se rebajan del inventario. El precio no cambia.
+function ingsLinea(it) {
+  if (!it || it.promo || it.combo) return [];
+  const ps = [prod(it.id), it.mitad ? prod(it.mitad.id) : null].filter(Boolean);
+  const ids = [...new Set(ps.flatMap(p => Object.entries(recipeOf(p, it.size)).filter(([, q]) => +q > 0).map(([k]) => k)))];
+  // No se ofrece quitar la masa ni los empaques (cajas, bolsas…): solo los ingredientes que el cliente puede pedir quitar.
+  const fijo = i => /^(masa|caja|bolsa|empaque|servilleta|vaso|tapa|pajilla|papel|harina|levadura|aceite|sal|az[uú]car)\b/i.test(i.nombre || '') || /empaque|desechable/i.test(i.cat || '');
+  return ids.filter(k => S.inv[k] && !fijo(S.inv[k])).map(k => ({id: k, nombre: S.inv[k].nombre})).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+async function lineSin(key) {
+  const it = S.cart.find(i => i.key === key); if (!it) return;
+  const ings = ingsLinea(it); if (!ings.length) return toast('Este producto no tiene receta: no hay ingredientes para quitar.');
+  const tiene = new Set((it.sin || []).map(x => x.id));
+  const res = await dialog(`<h2>Sin ingredientes · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplica a las ' + it.qty + ' unidades de esta línea. ' : ''}Toque lo que el cliente NO quiere. Sale en la comanda y en el tiquete, y no se rebaja del inventario. El precio no cambia.</small></h2>
+    <div class="chips" id="snChips">${ings.map(g => `<button data-act="snTog" data-v="${esc(g.id)}" aria-pressed="${tiene.has(g.id)}">Sin ${esc(g.nombre.toLowerCase())}</button>`).join('')}</div>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Listo</button></div>`, '',
+    () => [...document.querySelectorAll('#snChips button[aria-pressed="true"]')].map(b => b.dataset.v));
+  if (!res) return;
+  const sin = ings.filter(g => res.includes(g.id));
+  const prev = it.sin; it.sin = sin; const nk = it.key.replace(/\|sin:[^|]*$/, '') + sinK(it); it.sin = prev;
+  const otra = S.cart.find(i => i.key === nk && i !== it);
+  if (otra) { otra.qty += it.qty; S.cart = S.cart.filter(i => i !== it); } else { if (sin.length) it.sin = sin; else delete it.sin; it.key = nk; }
   renderGrid(); renderTicket();
 }
 
@@ -1466,7 +1501,7 @@ function lineasFactura(desc) {
     }
     const p = it.mitad ? [prod(it.id), prod(it.mitad.id)].filter(Boolean).sort((a, b) => priceOf(b, it.size) - priceOf(a, it.size))[0] : prod(it.id);
     out.push({id: it.id, nombre: it.nombre, size: it.size, precio: it.precio, qty: it.qty, total: r2(it.precio * it.qty), nota: it.nota || '', cabys: p?.cabys || '',
-      extras: (it.extras || []).map(exTxt), ...(it.promo ? {promo: it.promoNombre || 'Promoción', precioLista: it.precioLista || 0} : {})});
+      extras: (it.extras || []).map(exTxt), ...((it.sin || []).length ? {sin: it.sin.map(x => x.nombre)} : {}), ...(it.promo ? {promo: it.promoNombre || 'Promoción', precioLista: it.precioLista || 0} : {})});
     for (const e of it.extras || []) out.push({id: e.id, nombre: e.nombre, size: 'U', precio: e.precio, qty: it.qty * (e.q || 1), total: r2(e.precio * it.qty * (e.q || 1)), nota: '', cabys: prod(e.id)?.cabys || '', extra: true, de: it.nombre});
   }
   const base = out.reduce((a, l) => a + l.total, 0);
@@ -1515,14 +1550,15 @@ async function cobrar() {
   if (!esCI && S.tipo === 'app' && !S.app) return toast('Elija la plataforma de la orden (DiDi Food, Uber Eats, Rappi o PedidosYa).');
   const conFac = !esCI && S.factura;
   const nit = conFac ? (S.cliente.nit || '').replace(/\D/g, '') : '';
-  const nombre = esCI ? 'Consumo: ' + S.consumoPara : conFac ? (S.cliente.nombre || '').trim() : 'Cliente contado';
+  const nombre = esCI ? 'Consumo: ' + S.consumoPara : conFac ? (S.cliente.nombre || '').trim() : ($('#tkNomC')?.value ?? S.nomC ?? '').trim();
+  if (!esCI && !conFac && nombre.length < 2) { toast('Escriba el nombre del cliente: sale en la comanda y en el tiquete.'); $('#tkNomC')?.focus(); return; }
   const correo = conFac ? (S.cliente.correo || '').trim() : '';
   if (conFac) {
     if (!idTipo(nit)) { toast('Para factura electrónica la cédula debe tener 9 dígitos (física), 10 (jurídica) u 11–12 (DIMEX).'); $('#tkNit')?.focus(); return; }
     if (!nombre || nombre === 'Cliente contado') { toast('Escriba el nombre o la razón social del cliente.'); $('#tkNom')?.focus(); return; }
     if (!correoOK(correo)) { toast('Escriba un correo válido: ahí le llega la factura electrónica.'); $('#tkMail')?.focus(); return; }
   }
-  const consumo = consumoOf(S.cart);
+  const consumo = consumoOf(S.cart, S.tipo);
   const faltan = Object.entries(consumo).filter(([k, q]) => S.inv[k] && S.inv[k].stock < q);
   if (faltan.length) {
     const ok = await confirmBox('Ingredientes insuficientes',
@@ -1561,7 +1597,7 @@ async function cobrar() {
     });
     const k = kitchenOf(f);
     try { await S.db.doc(sp('comandas/' + f.numero)).set(k); } catch (e) { console.warn(e); toast('La venta se guardó, pero la comanda no llegó a cocina. Avise a cocina.'); }
-    S.cart = []; S.cartTs = 0; S.recibido = ''; S.cliente = CLI_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
+    S.cart = []; S.cartTs = 0; S.recibido = ''; S.cliente = CLI_DEF(); S.nomC = ''; S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
     S.lastF = f; S.busy = false;
     renderGrid(); renderTicket();
     openModal(`<div class="sheet wide"><div class="pair">
@@ -1751,7 +1787,7 @@ function receiptHTML(f) {
     <div class="r"><span>Cajero</span><span>${esc(f.cajero)}</span></div><div class="r"><span>Orden</span><span>${esc(tipo)}</span></div>
     <hr><div>${esc(f.cliente?.nombre)}</div>${f.cliente?.nit ? `<div class="r"><span>Cédula</span><span>${esc(f.cliente.nit)}</span></div>` : ''}<hr>
     ${f.items.map(it => it.extra ? `<div class="r"><span>&nbsp;&nbsp;+ ${esc(it.nombre)}${it.qty > 1 ? ' x' + it.qty : ''}</span><span>${money(it.total)}</span></div>`
-      : `<div>${esc(it.nombre)}${it.size !== 'U' ? ' ' + esc(SIZES[it.size]?.l || it.size) : ''}${it.promo ? ' (regalo)' : ''}</div><div class="r"><span>&nbsp;&nbsp;${it.qty} x ${money(it.precio)}</span><span>${money(it.total)}</span></div>${it.promo ? `<div>&nbsp;&nbsp;Promo: ${esc(it.promo)}</div>` : ''}${it.nota ? `<div>&nbsp;&nbsp;→ ${esc(it.nota)}</div>` : ''}`).join('')}
+      : `<div>${esc(it.nombre)}${it.size !== 'U' ? ' ' + esc(SIZES[it.size]?.l || it.size) : ''}${it.promo ? ' (regalo)' : ''}</div><div class="r"><span>&nbsp;&nbsp;${it.qty} x ${money(it.precio)}</span><span>${money(it.total)}</span></div>${it.promo ? `<div>&nbsp;&nbsp;Promo: ${esc(it.promo)}</div>` : ''}${(it.sin || []).length ? `<div>&nbsp;&nbsp;${esc(sinTxt(it.sin))}</div>` : ''}${it.nota ? `<div>&nbsp;&nbsp;→ ${esc(it.nota)}</div>` : ''}`).join('')}
     ${f.tipoDoc === 'consumo' ? `<hr><div class="r"><span>Valor de menú</span><span>${money(f.valorMenu)}</span></div><div class="r"><span>Costo ingredientes</span><span>${money(f.costo)}</span></div><div class="r tt"><span>A COBRAR</span><span>${money(0)}</span></div><div class="c">Autorizado · no es venta</div>`
     : `<hr>${f.descuento ? `<div class="r"><span>Total antes de descuento</span><span>${money(f.bruto)}</span></div><div class="r"><span>Descuento: ${esc(f.descuento.nombre)}</span><span>−${money(f.descuento.monto)}</span></div>` : ''}${conIVA(f) ? `<div class="r"><span>Subtotal</span><span>${money(f.subtotal)}</span></div><div class="r"><span>IVA ${nf(f.ivaPct, 2)}%</span><span>${money(f.iva)}</span></div>` : ''}${f.servicio ? `<div class="r"><span>Servicio 10 %</span><span>${money(f.servicio)}</span></div>` : ''}
     <div class="r tt"><span>TOTAL</span><span>${money(f.total)}</span></div>
@@ -1766,7 +1802,7 @@ function receiptText(f) {
   const lr = (l, r) => { l = String(l); r = String(r); return l + ' '.repeat(Math.max(1, W - l.length - r.length)) + r; };
   const L = [c((b.nombre || '').toUpperCase())]; if (b.sucursal) L.push(c('Sucursal ' + b.sucursal)); if (b.nit) L.push(c('Ced. juridica ' + b.nit)); if (b.direccion) L.push(c(b.direccion)); if (b.web) L.push(c(b.web));
   L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
-  f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); });
+  f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); if ((it.sin || []).length) L.push('  ' + sinTxt(it.sin)); });
   if (f.descuento) L.push('-'.repeat(W), lr('Antes de descuento', money(f.bruto)), lr('Descuento', '-' + money(f.descuento.monto)));
   L.push('-'.repeat(W), ...(conIVA(f) ? [lr('Subtotal', money(f.subtotal)), lr('IVA ' + f.ivaPct + '%', money(f.iva))] : []), ...(f.servicio ? [lr('Servicio 10%', money(f.servicio))] : []), lr('TOTAL', money(f.total)));
   if (f.pago === 'mixto') { pagosDe(f).forEach(x => L.push(lr(PAGO_L[x.medio] || x.medio, money(x.monto)))); if (efectivoDe(f)) L.push(lr('Efectivo recibido', money(f.recibido)), lr('Cambio', money(f.cambio))); }
@@ -1780,7 +1816,7 @@ function receiptText(f) {
 const tipoL = k => (TIPOS.find(t => t[0] === k) || ['', ''])[1];
 function kitchenOf(f) {
   return {numero: f.numero, corto: (f.tipoDoc === 'consumo' ? 'CI-' : '') + String(f.n % 1000).padStart(3, '0'), ts: f.ts, inicio: f.inicio || f.ts, tipo: f.tipo, plataforma: f.plataforma || '', cliente: f.cliente?.nombre || '', cajero: f.cajero,
-    items: f.items.filter(it => !it.extra).map(it => ({nombre: it.nombre, size: it.size, qty: it.qty, nota: it.nota || '', extras: it.extras || [], promo: !!it.promo, cat: prod(it.id)?.cat || ''})),
+    items: f.items.filter(it => !it.extra).map(it => ({nombre: it.nombre, size: it.size, qty: it.qty, nota: it.nota || '', extras: it.extras || [], ...((it.sin || []).length ? {sin: it.sin} : {}), promo: !!it.promo, cat: prod(it.id)?.cat || ''})),
     estado: 'pendiente', tsEstado: f.ts};
 }
 function kitchenHTML(k) {
@@ -1789,13 +1825,13 @@ function kitchenHTML(k) {
     <div class="kbig">#${esc(k.corto)}</div>
     <div class="r"><span>${esc(tipoTxt(k.tipo, k.plataforma)).toUpperCase()}</span><span>${ftime(k.ts)}</span></div>
     <div class="r"><span>${esc(k.cliente)}</span><span>${esc(k.numero)}</span></div><hr>
-    ${prep.map(i => `<div class="kit-it"><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span><b>${esc(i.nombre)}</b>${i.size !== 'U' ? ` <span class="mute">${SIZES[i.size].i}</span>` : ''}${(i.extras || []).map(e => `<em>+ ${esc(e)}</em>`).join('')}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></div>`).join('') || '<div class="mute">Sin preparación</div>'}
+    ${prep.map(i => `<div class="kit-it"><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span><b>${esc(i.nombre)}</b>${i.size !== 'U' ? ` <span class="mute">${SIZES[i.size].i}</span>` : ''}${(i.extras || []).map(e => `<em>+ ${esc(e)}</em>`).join('')}${(i.sin || []).length ? `<em class="sinx">${esc(sinTxt(i.sin))}</em>` : ''}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></div>`).join('') || '<div class="mute">Sin preparación</div>'}
     ${beb.length ? `<hr><div class="mute">Bebidas: ${beb.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>` : ''}
     <hr><div class="c mute">Cajero: ${esc(k.cajero)}</div>`;
 }
 function kitchenText(k) {
   const L = ['COMANDA COCINA  #' + k.corto, tipoTxt(k.tipo, k.plataforma).toUpperCase() + '  ' + ftime(k.ts), k.cliente, '-'.repeat(32)];
-  k.items.forEach(i => { L.push(i.qty + 'x ' + (i.size !== 'U' ? '[' + i.size + '] ' : '') + i.nombre); (i.extras || []).forEach(e => L.push('   + ' + e)); if (i.nota) L.push('   -> ' + i.nota); });
+  k.items.forEach(i => { L.push(i.qty + 'x ' + (i.size !== 'U' ? '[' + i.size + '] ' : '') + i.nombre); (i.extras || []).forEach(e => L.push('   + ' + e)); if ((i.sin || []).length) L.push('   ' + sinTxt(i.sin)); if (i.nota) L.push('   -> ' + i.nota); });
   return L.join('\n');
 }
 function viewCocina() {
@@ -1824,7 +1860,7 @@ function renderCocina() {
         return `<article class="kcard ${late ? 'late' : ''}">
           <header><b class="kno">#${esc(c.corto)}</b><span class="pill">${esc(tipoTxt(c.tipo, c.plataforma))}</span><span class="kmin ${late ? 'late' : ''}" title="Minutos en esta fase">${enFase} min</span></header>
           <div class="kcli">${esc(c.cliente)} · entró ${ftime(c.ts)}</div>
-          <ul>${prep.map(i => `<li><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span>${esc(i.nombre)}${(i.extras || []).map(e => `<em class="kx">+ ${esc(e)}</em>`).join('')}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></li>`).join('') || '<li class="mute">Solo bebidas</li>'}</ul>
+          <ul>${prep.map(i => `<li><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span>${esc(i.nombre)}${(i.extras || []).map(e => `<em class="kx">+ ${esc(e)}</em>`).join('')}${(i.sin || []).length ? `<em class="kx sinx">${esc(sinTxt(i.sin))}</em>` : ''}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></li>`).join('') || '<li class="mute">Solo bebidas</li>'}</ul>
           ${beb.length ? `<div class="kbeb">Bebidas: ${beb.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>` : ''}
           <div class="row" style="flex-wrap:nowrap"><button class="ghost sm" data-act="prtk" data-n="${esc(c.numero)}" style="min-height:48px">Imprimir</button><button class="${kBtnDe(c) === 'Entregada' ? 'ghost' : 'primary'}" style="flex:1" data-act="kNext" data-n="${esc(c.numero)}">${esc(kBtnDe(c))}</button></div></article>`;
       }).join('') || `<div class="kempty">${st === 'pendiente' ? 'Sin comandas nuevas' : 'Vacío'}</div>`}</div></section>`;
@@ -3915,7 +3951,7 @@ const ACT = {
   inc: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it) it.qty++; renderGrid(); renderTicket(); },
   dec: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it && --it.qty <= 0) S.cart = S.cart.filter(i => i !== it); renderGrid(); renderTicket(); },
   cyc: t => cycleSize(t.dataset.k),
-  clear: () => { S.cart = []; S.cartTs = 0; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
+  clear: () => { S.cart = []; S.cartTs = 0; S.nomC = ''; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
   tipo: t => { S.tipo = t.dataset.v; if (S.tipo !== 'app') S.app = ''; renderTicket(); },
   appSel: t => { S.app = t.dataset.v; renderTicket(); },
   pago: t => { S.pago = t.dataset.v; S.recibido = ''; renderTicket(); },
@@ -3984,6 +4020,8 @@ const ACT = {
   seed: () => seedDB(),
   promoAdd: t => promoAdd(t.dataset.id),
   lineExtras: t => lineExtras(t.dataset.k),
+  lineSin: t => lineSin(t.dataset.k),
+  snTog: t => t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') !== 'true'),
   descMenu: () => descMenu(),
   descQuitar: () => { S.desc = null; renderTicket(); },
   consumoToggle: () => { S.consumo = !S.consumo; if (S.consumo) S.desc = null; renderTicket(); },
@@ -4025,6 +4063,7 @@ document.addEventListener('input', e => {
   const t = e.target, id = t.id;
   if (id === 'tkNit') S.cliente.nit = t.value;
   else if (id === 'tkNom') S.cliente.nombre = t.value;
+  else if (id === 'tkNomC') S.nomC = t.value;
   else if (id === 'tkPara') S.consumoPara = t.value;
   else if (id === 'tkMail') S.cliente.correo = t.value;
   else if (id === 'tkRec') { S.recibido = t.value.replace(',', '.'); updateTotals(); }
@@ -4049,7 +4088,7 @@ document.addEventListener('change', e => {
   if (t.id === 'rSuc') { S.rep.suc = t.value; loadRep(); }
   else if (t.classList.contains('cbEC')) { const e = S.cbDraft.espacios[+t.dataset.i]; e.cat = t.value; e.tam = t.value === 'pizza' ? 'G' : 'U'; e.prods = []; cbRerender(); }
   else if (t.classList.contains('cbET')) { const e = S.cbDraft.espacios[+t.dataset.i]; e.tam = t.value; e.prods = []; cbRerender(); }
-  else if (t.id === 'tkFE') { S.factura = t.checked; if (!S.factura) S.cliente = CLI_DEF(); else if (S.cliente.nombre === 'Cliente contado') S.cliente.nombre = ''; renderTicket(); if (S.factura) setTimeout(() => $('#tkNit')?.focus(), 30); }
+  else if (t.id === 'tkFE') { S.factura = t.checked; if (!S.factura) { const n = (S.cliente.nombre || '').trim(); S.cliente = CLI_DEF(); if (n && n !== 'Cliente contado' && !S.nomC) S.nomC = n; } else if (S.cliente.nombre === 'Cliente contado') S.cliente.nombre = S.nomC || ''; renderTicket(); if (S.factura) setTimeout(() => $('#tkNit')?.focus(), 30); }
   else if (t.id === 'ocCat') { S.ocCat = t.value; $('#ocLines').innerHTML = ocLinesHTML(); }
   else if (t.classList.contains('ivc')) toggleVence(t.dataset.id, t.checked);
   else if (t.id === 'usR') { const w = $('#usSw'); if (w) w.hidden = t.value === 'dueno'; }
