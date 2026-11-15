@@ -403,6 +403,7 @@ th{color:var(--brand)}
 .pk-img{display:block;width:84px;height:84px;border-radius:12px;overflow:hidden;flex:none;background:radial-gradient(circle,#FFFFFF 0%,#FBE3C4 100%)}
 .pk-img img{width:100%;height:100%;object-fit:contain;padding:3px}
 .pk-img.real img{object-fit:cover;padding:0}
+.expbox{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}.expbox .field{margin:0}.expbox textarea{resize:vertical;min-height:52px;font:inherit}
 .appbox{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding:8px;border:1px dashed var(--brand);border-radius:12px;background:#F6EEFF}
 .appbox button{flex:1 1 auto;min-width:90px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);font-weight:600;font-size:13px}
 .appbox button[aria-pressed="true"]{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -550,7 +551,7 @@ const CATS = [['pizza', 'Pizzas'], ['bebida', 'Bebidas'], ['complemento', 'Compl
 const CATS_VENTA = CATS.filter(c => c[0] !== 'extra');
 const CATS_POS = [...CATS_VENTA, ['combo', 'Combos']];
 const CATNAME = Object.fromEntries([...CATS, ['combo', 'Combos']]);
-const TIPOS = [['mesa', 'Comer aquí'], ['llevar', 'Para llevar'], ['domicilio', 'Domicilio'], ['app', 'App']];
+const TIPOS = [['mesa', 'Comer aquí'], ['llevar', 'Para llevar'], ['domicilio', 'Exprés'], ['app', 'App']];
 const APPS = ['DiDi Food', 'Uber Eats', 'Rappi', 'PedidosYa'];
 /** Tipo de orden con la plataforma (ej. «App · Rappi»). */
 const tipoTxt = (t, plat) => t === 'app' ? 'App' + (plat ? ' · ' + plat : '') : tipoL(t);
@@ -730,7 +731,7 @@ function consumoOf(items, tipo) {
   const c = {}; const local = tipo === 'mesa';
   const sum = (p, sz, n, sin) => { if (p) for (const [ing, q] of Object.entries(recipeOf(p, sz))) { if (sin && sin.has(ing)) continue; if (local && esEmpaque(S.inv[ing])) continue; c[ing] = r3((c[ing] || 0) + (+q || 0) * n); } };
   for (const it of items) {
-    if (it.combo) { for (const x of it.combo.partes || []) sum(prod(x.id), x.size, it.qty); continue; }
+    if (it.combo) { for (const x of it.combo.partes || []) sum(prod(x.id), x.size, it.qty); for (const e of it.extras || []) sum(prod(e.id), 'U', it.qty * (e.q || 1)); continue; }
     // Lo que el cliente pidió "sin" (ej. sin cebolla) no se rebaja del inventario.
     const sin = (it.sin || []).length ? new Set(it.sin.map(x => x.id)) : null;
     if (it.mitad) { sum(prod(it.id), it.size, it.qty / 2, sin); sum(prod(it.mitad.id), it.size, it.qty / 2, sin); }
@@ -1138,7 +1139,7 @@ function renderTicket() {
     const p = prod(it.id); const multi = p && p.tamanos.length > 1;
     return `<div class="line ${it.promo ? 'promo' : ''}">
       <div class="qty"><button data-act="dec" data-k="${esc(it.key)}" aria-label="Quitar uno">−</button><span>${it.qty}</span><button data-act="inc" data-k="${esc(it.key)}" aria-label="Agregar uno">+</button></div>
-      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${it.combo ? it.combo.partes.map(x => `<em class="ext">${esc(x.espacio)}: ${esc(x.nombre)}${x.size !== 'U' ? ' ' + x.size : ''}</em>`).join('') : ''}${(it.extras || []).map(e => `<em class="ext">+ ${esc(exTxt(e))} ${money0(e.precio * (e.q || 1))}</em>`).join('')}${(it.sin || []).length ? `<em class="sinx">${esc(sinTxt(it.sin.map(x => x.nombre)))}</em>` : ''}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}${p?.cat === 'pizza' && !it.promo ? `<button class="exbtn" data-act="lineExtras" data-k="${esc(it.key)}">${(it.extras || []).length ? 'Cambiar extras' : '+ Extra'}</button>` : ''}${!it.combo && ingsLinea(it).length ? `<button class="exbtn sinb" data-act="lineSin" data-k="${esc(it.key)}">${(it.sin || []).length ? 'Cambiar "sin"' : '− Sin…'}</button>` : ''}</div>
+      <div class="line-name">${esc(it.nombre)}${multi && !it.promo ? `<button class="szchip" data-act="cyc" data-k="${esc(it.key)}" title="Cambiar tamaño">${it.size}</button>` : multi ? ` <span class="mono mute">${it.size}</span>` : ''}<small>${it.promo ? 'Regalo · ' + esc(it.promoNombre || 'promoción') : money0(it.precio) + ' c/u' + (multi ? ' · ' + SIZES[it.size].l + ' ' + SIZES[it.size].i : '')}</small>${it.combo ? it.combo.partes.map(x => `<em class="ext">${esc(x.espacio)}: ${esc(x.nombre)}${x.size !== 'U' ? ' ' + x.size : ''}</em>`).join('') : ''}${(it.extras || []).map(e => `<em class="ext">+ ${esc(exTxt(e))} ${money0(e.precio * (e.q || 1))}</em>`).join('')}${(it.sin || []).length ? `<em class="sinx">${esc(sinTxt(it.sin.map(x => x.nombre)))}</em>` : ''}${it.nota ? `<em>→ ${esc(it.nota)}</em>` : ''}${(it.combo || ['pizza', 'complemento', 'combo'].includes(p?.cat)) && !it.promo ? `<button class="exbtn" data-act="lineExtras" data-k="${esc(it.key)}">${(it.extras || []).length ? 'Cambiar extras' : '+ Extra'}</button>` : ''}${!it.combo && ingsLinea(it).length ? `<button class="exbtn sinb" data-act="lineSin" data-k="${esc(it.key)}">${(it.sin || []).length ? 'Cambiar "sin"' : '− Sin…'}</button>` : ''}</div>
       <div class="line-tot">${it.promo ? '<span class="pill ok">Gratis</span>' : money0(lineUnit(it) * it.qty)}</div></div>`;
   }).join('') + promoSugerencias().map(x => `<div class="promo-sug"><span>🎁 <b>${esc(x.pr.nombre)}</b><br><small>Puede agregar ${x.faltan} × ${esc(prod(x.pr.regalo.prod)?.nombre || 'regalo')} gratis</small></span><button class="primary sm" data-act="promoAdd" data-id="${esc(x.pr.id)}">Agregar</button></div>`).join('')
     : `<div class="tk-empty">${ico('pepperoni')}<span>Toque una pizza, elija el tamaño<br>y se agrega a esta comanda.</span></div>`;
@@ -1148,6 +1149,9 @@ function renderTicket() {
         <div class="tk-who"><b>${esc(caj)}</b><small>${esc(sucAct().nombre)}</small></div></div>
       ${(() => { const tu = turnoAct(); return `<button class="cajachip ${tu ? 'ok' : 'off'}" data-act="cajaMenu"><span class="dot"></span><b>${S.puesto ? cajaNom(S.puesto) : 'Elegir caja'}</b><span>${tu ? 'Abierta · ' + ftime(tu.ts) : 'Cerrada'}</span><i>Caja ›</i></button>`; })()}
       <div class="seg sm" role="group" aria-label="Tipo de orden">${TIPOS.map(([k, l]) => `<button data-act="tipo" data-v="${k}" aria-pressed="${S.tipo === k}">${l}</button>`).join('')}</div>
+      ${esExpres() ? `<div class="appbox expbox"><label class="field"><span>Monto del exprés (${esc(sym())}) <b class="bad">*</b></span><input class="inp num" id="exMonto" inputmode="decimal" value="${esc(S.exp?.monto || '')}" placeholder="Ej. 1500"></label>
+        <label class="field"><span>Teléfono del cliente <b class="bad">*</b></span><input class="inp mono" id="exTel" inputmode="tel" value="${esc(S.exp?.tel || '')}" autocomplete="off" placeholder="8888 8888"></label>
+        <label class="field" style="grid-column:1/-1"><span>Dirección de entrega <b class="bad">*</b></span><textarea class="inp" id="exDir" rows="2" placeholder="Barrio, calle, señas">${esc(S.exp?.dir || '')}</textarea></label></div>` : ''}
       ${S.tipo === 'app' ? `<div class="appbox" role="group" aria-label="Plataforma">${APPS.map(a => `<button data-act="appSel" data-v="${esc(a)}" aria-pressed="${S.app === a}">${esc(a)}</button>`).join('')}</div>` : ''}
     </div>
     <div class="tk-lines" id="tkLines">${lines}</div>
@@ -1172,8 +1176,12 @@ function renderTicket() {
 }
 // 10 % de servicio (ley de restaurantes): sobre el precio sin IVA, después de descuentos; no lleva IVA.
 const servicioDe = total => S.servicio && !S.consumo ? r2(split(total).sub * 0.10) : 0;
+// Exprés: la caja escribe el monto del envío, el teléfono y la dirección. El monto se suma a la factura como una línea más.
+const EXP_DEF = () => ({monto: '', tel: '', dir: ''});
+const esExpres = () => S.tipo === 'domicilio' && !S.consumo;
+const expM = () => esExpres() ? Math.max(0, r2(parseFloat(String(S.exp?.monto || '').replace(',', '.')) || 0)) : 0;
 function updateTotals() {
-  const bienes = cartTotal(); const {sub, iva} = split(bienes); const srv = servicioDe(bienes); const total = r2(bienes + srv);
+  const xm = expM(); const bienes = r2(cartTotal() + xm); const {sub, iva} = split(bienes); const srv = servicioDe(cartTotal()); const total = r2(bienes + srv);
   const pc = pagosCalc(total); const enEf = S.pago === 'efectivo' || S.pago === 'mixto'; const due = pc.efectivo;
   const rec = enEf ? (S.recibido === '' ? due : parseFloat(S.recibido) || 0) : total;
   const cambio = enEf ? Math.max(0, r2(rec - due)) : 0;
@@ -1181,7 +1189,7 @@ function updateTotals() {
   const tot = $('#tkTot');
   const dm = descMonto();
   if (tot && S.consumo) tot.innerHTML = `<dt>Valor de menú (no se cobra)</dt><dd>${money(cartBruto())}</dd><dt>Costo de ingredientes</dt><dd>${money(costoDe(consumoOf(S.cart, S.tipo)))}</dd>`;
-  else if (tot) tot.innerHTML = `${dm ? `<dt>Antes de descuento</dt><dd>${money(cartBruto())}</dd><dt>Descuento ${esc(S.desc.nombre)}</dt><dd class="bad">−${money(dm)}</dd>` : ''}${S.factura && !S.consumo ? `<dt>Subtotal sin IVA</dt><dd>${money(sub)}</dd><dt>IVA ${nf(S.neg.iva, 2)}%</dt><dd>${money(iva)}</dd>` : ''}${srv ? `<dt>Servicio 10 %</dt><dd>${money(srv)}</dd>` : ''}
+  else if (tot) tot.innerHTML = `${dm ? `<dt>Antes de descuento</dt><dd>${money(cartBruto())}</dd><dt>Descuento ${esc(S.desc.nombre)}</dt><dd class="bad">−${money(dm)}</dd>` : ''}${S.factura && !S.consumo ? `<dt>Subtotal sin IVA</dt><dd>${money(sub)}</dd><dt>IVA ${nf(S.neg.iva, 2)}%</dt><dd>${money(iva)}</dd>` : ''}${srv ? `<dt>Servicio 10 %</dt><dd>${money(srv)}</dd>` : ''}${xm ? `<dt>Exprés</dt><dd>${money(xm)}</dd>` : ''}
     <dt class="big">Total</dt><dd class="big">${money(total)}</dd>
     ${enEf && S.cart.length && due > 0 ? `<dt>Cambio</dt><dd class="chg">${rec < due - 0.001 ? '<span class="bad">falta ' + money(due - rec) + '</span>' : money(cambio)}</dd>` : ''}`;
   const q = $('#tkQuick');
@@ -1258,7 +1266,7 @@ async function lineExtras(key) {
     return;
   }
   const tiene = Object.fromEntries((it.extras || []).map(e => [e.id, e.q || 1]));
-  const res = await dialog(`<h2>Extras · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplican a las ' + it.qty + ' pizzas de esta línea. ' : ''}Toque el extra para agregarlo; tóquelo otra vez o use + para pedir doble o triple.</small></h2>
+  const res = await dialog(`<h2>Extras · ${esc(it.nombre)} ${it.size !== 'U' ? esc(SIZES[it.size].l) : ''}<small>${it.qty > 1 ? 'Se aplican a las ' + it.qty + ' unidades de esta línea. ' : ''}Toque el extra para agregarlo; tóquelo otra vez o use + para pedir doble o triple.</small></h2>
     <div class="xgrid" id="lxChips">${exs.map(e => { const q = tiene[e.id] || 0; return `<div class="xcard" data-v="${esc(e.id)}" data-q="${q}" aria-pressed="${q > 0}">
       <button class="xmain" data-act="exMas" data-v="${esc(e.id)}">${imgHTML(fotoExtra(e), 'x-img')}<b>${esc(e.nombre.replace(/^extra\s+/i, '').replace(/^./, c => c.toUpperCase()))}</b><span class="mono">+${money0(priceOf(e, 'U'))}</span></button>
       <div class="xq"><button data-act="exMenos" data-v="${esc(e.id)}" aria-label="Quitar uno">−</button><span class="xn">${q}</span><button data-act="exMas" data-v="${esc(e.id)}" aria-label="Agregar uno">+</button></div></div>`; }).join('')}</div>
@@ -1266,7 +1274,8 @@ async function lineExtras(key) {
     () => [...document.querySelectorAll('#lxChips .xcard')].map(c => [c.dataset.v, +c.dataset.q || 0]).filter(x => x[1] > 0));
   if (!res) return;
   const extras = res.map(([x, q]) => [prod(x), q]).filter(x => x[0]).map(([e, q]) => ({id: e.id, nombre: e.nombre, precio: priceOf(e, 'U'), ...(q > 1 ? {q} : {})}));
-  const nk = it.id + '|' + it.size + '|' + (it.nota || '') + '|' + exKey(extras) + (it.mitad ? '|m:' + it.mitad.id : '') + sinK(it);
+  const nk = it.combo ? it.key.replace(/\|ex:[^|]*$/, '') + (extras.length ? '|ex:' + exKey(extras) : '')
+    : it.id + '|' + it.size + '|' + (it.nota || '') + '|' + exKey(extras) + (it.mitad ? '|m:' + it.mitad.id : '') + sinK(it);
   const otra = S.cart.find(i => i.key === nk && i !== it);
   if (otra) { otra.qty += it.qty; S.cart = S.cart.filter(i => i !== it); } else { it.extras = extras; it.key = nk; }
   renderGrid(); renderTicket();
@@ -1496,7 +1505,9 @@ function lineasFactura(desc) {
   const out = [];
   for (const it of S.cart) {
     if (it.combo) {
-      for (const x of partesCombo(it)) out.push({id: x.id, nombre: x.nombre, size: x.size, precio: x.precio, qty: it.qty, total: r2(x.precio * it.qty), nota: it.nota || '', cabys: prod(x.id)?.cabys || '', extras: [], combo: it.combo.nombre, precioLista: x.lista});
+      const pcs = partesCombo(it); const conEx = Math.max(0, pcs.findIndex(x => prod(x.id)?.cat === 'pizza'));
+      pcs.forEach((x, j) => out.push({id: x.id, nombre: x.nombre, size: x.size, precio: x.precio, qty: it.qty, total: r2(x.precio * it.qty), nota: it.nota || '', cabys: prod(x.id)?.cabys || '', extras: j === conEx ? (it.extras || []).map(exTxt) : [], combo: it.combo.nombre, precioLista: x.lista}));
+      for (const e of it.extras || []) out.push({id: e.id, nombre: e.nombre, size: 'U', precio: e.precio, qty: it.qty * (e.q || 1), total: r2(e.precio * it.qty * (e.q || 1)), nota: '', cabys: prod(e.id)?.cabys || '', extra: true, de: it.nombre});
       continue;
     }
     const p = it.mitad ? [prod(it.id), prod(it.mitad.id)].filter(Boolean).sort((a, b) => priceOf(b, it.size) - priceOf(a, it.size))[0] : prod(it.id);
@@ -1541,7 +1552,13 @@ async function cobrar() {
     if (!esSuper() && !(await askPin('Autorizar consumo interno'))) return;
   }
   ajustarRegalos();
-  const bienes = esCI ? 0 : cartTotal(); const srv = esCI ? 0 : servicioDe(bienes); const total = r2(bienes + srv);
+  const xm = esCI ? 0 : expM();
+  if (!esCI && esExpres()) {
+    if (String(S.exp?.monto ?? '').trim() === '') { toast('Escriba el monto del exprés (ponga 0 si no se cobra).'); $('#exMonto')?.focus(); return; }
+    if ((S.exp.tel || '').replace(/\D/g, '').length < 8) { toast('Escriba el teléfono del cliente (8 dígitos).'); $('#exTel')?.focus(); return; }
+    if ((S.exp.dir || '').trim().length < 5) { toast('Escriba la dirección de entrega.'); $('#exDir')?.focus(); return; }
+  }
+  const bienes = esCI ? 0 : r2(cartTotal() + xm); const srv = esCI ? 0 : servicioDe(cartTotal()); const total = r2(bienes + srv);
   const pc = esCI ? {partes: [], efectivo: 0, exceso: 0} : pagosCalc(total); const enEf = !esCI && (S.pago === 'efectivo' || S.pago === 'mixto');
   if (!esCI && pc.exceso) return toast(`Los montos del pago mixto pasan el total por ${money(pc.exceso)}.`);
   if (!esCI && !pc.partes.length) return toast('Escriba cómo paga el cliente.');
@@ -1582,7 +1599,8 @@ async function cobrar() {
         numero, serie, n, ts: now, inicio: S.cartTs && S.cartTs <= now && now - S.cartTs < 6 * 3600e3 ? S.cartTs : now, fecha: new Date(now).toISOString(), cajero: caj, usuario: S.me?.usuario || '', uid: S.uid, tipo: S.tipo, ...(S.tipo === 'app' && !esCI ? {plataforma: S.app} : {}),
         sucursal: suc.id, sucursalNombre: suc.nombre, caja: turno ? turno.caja : '', turno: turno ? turno.id : '',
         cliente: {nit, nombre, correo},
-        items: lineasFactura(esCI ? 0 : descMonto()),
+        items: [...lineasFactura(esCI ? 0 : descMonto()), ...(xm ? [{id: 'expres', nombre: 'Servicio exprés', size: 'U', precio: xm, qty: 1, total: xm, nota: '', cabys: S.neg.cabysExpres || '', expres: true}] : [])],
+        ...(!esCI && esExpres() ? {entrega: {monto: xm, tel: S.exp.tel.trim(), dir: S.exp.dir.trim()}} : {}),
         bruto: esCI ? 0 : cartBruto(), descuento: !esCI && S.desc ? {...S.desc, monto: descMonto()} : null,
         promos: [...new Set(S.cart.filter(i => i.promo).map(i => i.promoNombre))],
         total, subtotal: sub, iva, ...(srv ? {servicio: srv, servicioPct: 10} : {}), ivaPct: +S.neg.iva || 0, pago: esCI ? 'consumo' : S.pago, ...(esCI ? {} : {pagos: pc.partes}), recibido: esCI ? 0 : r2(rec), cambio: enEf ? r2(rec - pc.efectivo) : 0,
@@ -1597,7 +1615,7 @@ async function cobrar() {
     });
     const k = kitchenOf(f);
     try { await S.db.doc(sp('comandas/' + f.numero)).set(k); } catch (e) { console.warn(e); toast('La venta se guardó, pero la comanda no llegó a cocina. Avise a cocina.'); }
-    S.cart = []; S.cartTs = 0; S.recibido = ''; S.cliente = CLI_DEF(); S.nomC = ''; S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
+    S.cart = []; S.cartTs = 0; S.recibido = ''; S.cliente = CLI_DEF(); S.nomC = ''; S.exp = EXP_DEF(); S.pago = 'efectivo'; S.desc = null; S.consumo = false; S.consumoPara = ''; S.factura = false; S.servicio = false; S.mix = {};
     S.lastF = f; S.busy = false;
     renderGrid(); renderTicket();
     openModal(`<div class="sheet wide"><div class="pair">
@@ -1729,7 +1747,7 @@ async function cajaCerrar() {
     <p class="note" style="margin:0">Cuente <b>todo</b> el efectivo de la gaveta, incluido el fondo inicial: escriba cuántos billetes y monedas hay de cada uno.</p>
     ${denomHTML()}
     <label class="field"><span>Total contado (${esc(sym())})</span><input class="inp num" id="ccC" inputmode="decimal" readonly style="font-size:22px;height:56px;background:var(--soft)"></label>
-    <label class="field"><span>Nota (opcional)</span><input class="inp" id="ccN" placeholder="Ej. billete dudoso, vuelto pendiente"></label>
+    <label class="field"><span>Observaciones (opcional)</span><textarea class="inp" id="ccN" rows="3" style="min-height:76px;resize:vertical;font:inherit" placeholder="Anote aquí cualquier error o detalle del turno: un cobro mal hecho, un billete dudoso, un vuelto pendiente, una venta que se registró en otra forma de pago…"></textarea></label>
     ${esSuper() ? '' : '<p class="note" style="margin:0">Para cerrar se necesita el PIN del encargado. El tiquete de cierre se imprime para él.</p>'}
     <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="danger" data-act="m-ok">Cerrar caja</button></div>`, 'wide',
     () => { const d = denomCalc(); const c = d.tot; if (!(c >= 0)) return false; return {c, nota: $('#ccN').value.trim(), denom: d.det, otro: d.otro}; });
@@ -1769,7 +1787,7 @@ function cierreHTML(t) {
     <div class="r tt"><span>${dif < 0 ? 'FALTANTE' : dif > 0 ? 'SOBRANTE' : 'DIFERENCIA'}</span><span>${money(Math.abs(dif))}</span></div>
     ${(t.movs || []).length ? '<hr>' + t.movs.map(m => `<div class="r"><span>${ftime(m.ts)} ${m.tipo === 'entrada' ? 'Entrada' : 'Salida'}: ${esc(m.motivo)}</span><span>${m.tipo === 'salida' ? '−' : ''}${money(m.monto)}</span></div>`).join('') : ''}
     ${(t.arqueos || []).length ? '<hr>' + t.arqueos.map(a => `<div class="r"><span>Arqueo ${ftime(a.ts)} (${esc(a.por)})</span><span>${a.dif < 0 ? '−' : a.dif > 0 ? '+' : ''}${money(Math.abs(a.dif))}</span></div>`).join('') : ''}
-    ${c.nota ? `<hr><div>Nota: ${esc(c.nota)}</div>` : ''}<hr><div class="c">Firma cajero ____________________</div><div class="c" style="margin-top:14px">Firma supervisor ________________</div>`;
+    ${c.nota ? `<hr><div style="font-weight:600">OBSERVACIONES</div><div style="white-space:pre-wrap">${esc(c.nota)}</div>` : ''}<hr><div class="c">Firma cajero ____________________</div><div class="c" style="margin-top:14px">Firma supervisor ________________</div>`;
 }
 
 /* ---------------- recibo ---------------- */
@@ -1785,7 +1803,7 @@ function receiptHTML(f) {
     <hr>${f.fe && f.fe.clave ? `<div class="c" style="font-weight:600">${esc((FE_TIPO[f.fe.tipo] || 'Comprobante electrónico').toUpperCase())}</div><div class="c">No. ${esc(f.fe.consecutivo)}</div><div class="c" style="font-size:10.5px;word-break:break-all">Clave ${esc(claveFmt(f.fe.clave))}</div>${f.fe.ambiente === 'sandbox' ? '<div class="c" style="font-weight:600">DOCUMENTO DE PRUEBA · SIN VALOR FISCAL</div>' : ''}<div class="c">Interno ${esc(f.numero)}</div>` : `<div class="c" style="font-weight:600">${f.tipoDoc === 'consumo' ? 'CONSUMO INTERNO' : 'COMPROBANTE DE VENTA'}</div><div class="c">No. ${esc(f.numero)}</div>`}
     <div class="r"><span>${fdate(f.ts)}</span><span>${ftime(f.ts)}</span></div>
     <div class="r"><span>Cajero</span><span>${esc(f.cajero)}</span></div><div class="r"><span>Orden</span><span>${esc(tipo)}</span></div>
-    <hr><div>${esc(f.cliente?.nombre)}</div>${f.cliente?.nit ? `<div class="r"><span>Cédula</span><span>${esc(f.cliente.nit)}</span></div>` : ''}<hr>
+    <hr><div>${esc(f.cliente?.nombre)}</div>${f.entrega ? `<div class="r"><span>Tel.</span><span>${esc(f.entrega.tel)}</span></div><div>Dirección: ${esc(f.entrega.dir)}</div>` : ''}${f.cliente?.nit ? `<div class="r"><span>Cédula</span><span>${esc(f.cliente.nit)}</span></div>` : ''}<hr>
     ${f.items.map(it => it.extra ? `<div class="r"><span>&nbsp;&nbsp;+ ${esc(it.nombre)}${it.qty > 1 ? ' x' + it.qty : ''}</span><span>${money(it.total)}</span></div>`
       : `<div>${esc(it.nombre)}${it.size !== 'U' ? ' ' + esc(SIZES[it.size]?.l || it.size) : ''}${it.promo ? ' (regalo)' : ''}</div><div class="r"><span>&nbsp;&nbsp;${it.qty} x ${money(it.precio)}</span><span>${money(it.total)}</span></div>${it.promo ? `<div>&nbsp;&nbsp;Promo: ${esc(it.promo)}</div>` : ''}${(it.sin || []).length ? `<div>&nbsp;&nbsp;${esc(sinTxt(it.sin))}</div>` : ''}${it.nota ? `<div>&nbsp;&nbsp;→ ${esc(it.nota)}</div>` : ''}`).join('')}
     ${f.tipoDoc === 'consumo' ? `<hr><div class="r"><span>Valor de menú</span><span>${money(f.valorMenu)}</span></div><div class="r"><span>Costo ingredientes</span><span>${money(f.costo)}</span></div><div class="r tt"><span>A COBRAR</span><span>${money(0)}</span></div><div class="c">Autorizado · no es venta</div>`
@@ -1801,7 +1819,7 @@ function receiptText(f) {
   const c = s => { s = String(s); const p = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(p) + s; };
   const lr = (l, r) => { l = String(l); r = String(r); return l + ' '.repeat(Math.max(1, W - l.length - r.length)) + r; };
   const L = [c((b.nombre || '').toUpperCase())]; if (b.sucursal) L.push(c('Sucursal ' + b.sucursal)); if (b.nit) L.push(c('Ced. juridica ' + b.nit)); if (b.direccion) L.push(c(b.direccion)); if (b.web) L.push(c(b.web));
-  L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
+  L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.entrega) L.push(lr('Tel.', f.entrega.tel), 'Dir: ' + f.entrega.dir); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
   f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); if ((it.sin || []).length) L.push('  ' + sinTxt(it.sin)); });
   if (f.descuento) L.push('-'.repeat(W), lr('Antes de descuento', money(f.bruto)), lr('Descuento', '-' + money(f.descuento.monto)));
   L.push('-'.repeat(W), ...(conIVA(f) ? [lr('Subtotal', money(f.subtotal)), lr('IVA ' + f.ivaPct + '%', money(f.iva))] : []), ...(f.servicio ? [lr('Servicio 10%', money(f.servicio))] : []), lr('TOTAL', money(f.total)));
@@ -1815,8 +1833,8 @@ function receiptText(f) {
 /* ---------------- COMANDA DE COCINA ---------------- */
 const tipoL = k => (TIPOS.find(t => t[0] === k) || ['', ''])[1];
 function kitchenOf(f) {
-  return {numero: f.numero, corto: (f.tipoDoc === 'consumo' ? 'CI-' : '') + String(f.n % 1000).padStart(3, '0'), ts: f.ts, inicio: f.inicio || f.ts, tipo: f.tipo, plataforma: f.plataforma || '', cliente: f.cliente?.nombre || '', cajero: f.cajero,
-    items: f.items.filter(it => !it.extra).map(it => ({nombre: it.nombre, size: it.size, qty: it.qty, nota: it.nota || '', extras: it.extras || [], ...((it.sin || []).length ? {sin: it.sin} : {}), promo: !!it.promo, cat: prod(it.id)?.cat || ''})),
+  return {numero: f.numero, corto: (f.tipoDoc === 'consumo' ? 'CI-' : '') + String(f.n % 1000).padStart(3, '0'), ts: f.ts, inicio: f.inicio || f.ts, tipo: f.tipo, plataforma: f.plataforma || '', cliente: f.cliente?.nombre || '', cajero: f.cajero, ...(f.entrega ? {tel: f.entrega.tel, dir: f.entrega.dir} : {}),
+    items: f.items.filter(it => !it.extra && !it.expres).map(it => ({nombre: it.nombre, size: it.size, qty: it.qty, nota: it.nota || '', extras: it.extras || [], ...((it.sin || []).length ? {sin: it.sin} : {}), promo: !!it.promo, cat: prod(it.id)?.cat || ''})),
     estado: 'pendiente', tsEstado: f.ts};
 }
 function kitchenHTML(k) {
@@ -1824,13 +1842,13 @@ function kitchenHTML(k) {
   return `<div class="c" style="font-weight:600;letter-spacing:.12em">COMANDA · COCINA</div>
     <div class="kbig">#${esc(k.corto)}</div>
     <div class="r"><span>${esc(tipoTxt(k.tipo, k.plataforma)).toUpperCase()}</span><span>${ftime(k.ts)}</span></div>
-    <div class="r"><span>${esc(k.cliente)}</span><span>${esc(k.numero)}</span></div><hr>
+    <div class="r"><span>${esc(k.cliente)}</span><span>${esc(k.numero)}</span></div>${k.dir ? `<div class="r"><span>Tel.</span><span>${esc(k.tel || '')}</span></div><div>Dirección: ${esc(k.dir)}</div>` : ''}<hr>
     ${prep.map(i => `<div class="kit-it"><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span><b>${esc(i.nombre)}</b>${i.size !== 'U' ? ` <span class="mute">${SIZES[i.size].i}</span>` : ''}${(i.extras || []).map(e => `<em>+ ${esc(e)}</em>`).join('')}${(i.sin || []).length ? `<em class="sinx">${esc(sinTxt(i.sin))}</em>` : ''}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></div>`).join('') || '<div class="mute">Sin preparación</div>'}
     ${beb.length ? `<hr><div class="mute">Bebidas: ${beb.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>` : ''}
     <hr><div class="c mute">Cajero: ${esc(k.cajero)}</div>`;
 }
 function kitchenText(k) {
-  const L = ['COMANDA COCINA  #' + k.corto, tipoTxt(k.tipo, k.plataforma).toUpperCase() + '  ' + ftime(k.ts), k.cliente, '-'.repeat(32)];
+  const L = ['COMANDA COCINA  #' + k.corto, tipoTxt(k.tipo, k.plataforma).toUpperCase() + '  ' + ftime(k.ts), k.cliente, ...(k.dir ? ['Tel. ' + (k.tel || ''), 'Dir: ' + k.dir] : []), '-'.repeat(32)];
   k.items.forEach(i => { L.push(i.qty + 'x ' + (i.size !== 'U' ? '[' + i.size + '] ' : '') + i.nombre); (i.extras || []).forEach(e => L.push('   + ' + e)); if ((i.sin || []).length) L.push('   ' + sinTxt(i.sin)); if (i.nota) L.push('   -> ' + i.nota); });
   return L.join('\n');
 }
@@ -1859,7 +1877,7 @@ function renderCocina() {
         const prep = c.items.filter(i => i.cat !== 'bebida'), beb = c.items.filter(i => i.cat === 'bebida');
         return `<article class="kcard ${late ? 'late' : ''}">
           <header><b class="kno">#${esc(c.corto)}</b><span class="pill">${esc(tipoTxt(c.tipo, c.plataforma))}</span><span class="kmin ${late ? 'late' : ''}" title="Minutos en esta fase">${enFase} min</span></header>
-          <div class="kcli">${esc(c.cliente)} · entró ${ftime(c.ts)}</div>
+          <div class="kcli">${esc(c.cliente)} · entró ${ftime(c.ts)}${c.dir ? `<br>📍 ${esc(c.dir)}${c.tel ? ' · ☎ ' + esc(c.tel) : ''}` : ''}</div>
           <ul>${prep.map(i => `<li><span class="kq">${i.qty}×</span>${i.size !== 'U' ? `<span class="ksz">${i.size}</span>` : '<span></span>'}<span>${esc(i.nombre)}${(i.extras || []).map(e => `<em class="kx">+ ${esc(e)}</em>`).join('')}${(i.sin || []).length ? `<em class="kx sinx">${esc(sinTxt(i.sin))}</em>` : ''}${i.nota ? `<em>→ ${esc(i.nota)}</em>` : ''}</span></li>`).join('') || '<li class="mute">Solo bebidas</li>'}</ul>
           ${beb.length ? `<div class="kbeb">Bebidas: ${beb.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>` : ''}
           <div class="row" style="flex-wrap:nowrap"><button class="ghost sm" data-act="prtk" data-n="${esc(c.numero)}" style="min-height:48px">Imprimir</button><button class="${kBtnDe(c) === 'Entregada' ? 'ghost' : 'primary'}" style="flex:1" data-act="kNext" data-n="${esc(c.numero)}">${esc(kBtnDe(c))}</button></div></article>`;
@@ -3312,11 +3330,11 @@ function repCajas(D) {
       <div class="kpi"><span class="lbl">Faltantes</span><b class="${falt.length ? 'bad' : ''}">${money(sumD(falt))}</b><em>${falt.length} cierre${falt.length === 1 ? '' : 's'}</em></div>
       <div class="kpi"><span class="lbl">Sobrantes</span><b>${money(sumD(sob))}</b><em>${sob.length} cierre${sob.length === 1 ? '' : 's'}</em></div>
       <div class="kpi"><span class="lbl">Efectivo cerrado</span><b>${money(cer.reduce((a, t) => a + (t.cierre?.contado || 0), 0))}</b><em>contado en los cierres</em></div></div>
-    <div class="sect"><h3>Aperturas y cierres</h3><div class="tbl"><table><thead><tr>${D.multi ? '<th>Sucursal</th>' : ''}<th>Caja</th><th>Apertura</th><th>Cierre</th><th>Cajero(s)</th><th class="n">Fondo</th><th class="n">Ventas</th><th class="n">Efectivo esperado</th><th class="n">Contado</th><th class="n">Diferencia</th><th></th></tr></thead><tbody>
+    <div class="sect"><h3>Aperturas y cierres</h3><div class="tbl"><table><thead><tr>${D.multi ? '<th>Sucursal</th>' : ''}<th>Caja</th><th>Apertura</th><th>Cierre</th><th>Cajero(s)</th><th class="n">Fondo</th><th class="n">Ventas</th><th class="n">Efectivo esperado</th><th class="n">Contado</th><th class="n">Diferencia</th><th>Observaciones</th><th></th></tr></thead><tbody>
       ${T.map(t => { const c = t.cierre; const dif = c ? c.dif : null; return `<tr>${D.multi ? `<td>${esc(sucOf(t.sucursal).nombre)}</td>` : ''}<td>${esc(t.cajaNombre || cajaNom(t.caja))}</td><td class="mono" style="white-space:nowrap">${fdt(t.ts)}</td>
         <td class="mono" style="white-space:nowrap">${c ? fdt(c.ts) : '<span class="pill warn">Abierta</span>'}</td><td>${esc(t.abre?.por || '')}${c && c.por !== t.abre?.por ? ' → ' + esc(c.por) : ''}</td>
         <td class="n">${money(t.fondo)}</td><td class="n">${c ? money(c.total) : '—'}</td><td class="n">${c ? money(c.esperado) : '—'}</td><td class="n">${c ? money(c.contado) : '—'}</td>
-        <td class="n ${dif < 0 ? 'bad' : ''}">${c ? (dif < 0 ? '−' : dif > 0 ? '+' : '') + money(Math.abs(dif)) : '—'}</td>
+        <td class="n ${dif < 0 ? 'bad' : ''}">${c ? (dif < 0 ? '−' : dif > 0 ? '+' : '') + money(Math.abs(dif)) : '—'}</td><td style="max-width:240px;white-space:normal;font-size:12px">${c?.nota ? '📝 ' + esc(c.nota) : ''}</td>
         <td>${c ? `<button class="ghost sm" data-act="turnoVer" data-id="${esc(t.id)}">Ver</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div>
     ${T.some(t => (t.arqueos || []).length) ? `<div class="sect"><h3>Arqueos</h3><div class="tbl"><table><thead><tr><th>Caja</th><th>Hora</th><th>Contó</th><th class="n">Contado</th><th class="n">Esperado</th><th class="n">Diferencia</th></tr></thead><tbody>
       ${T.flatMap(t => (t.arqueos || []).map(a => `<tr><td>${esc(t.cajaNombre || cajaNom(t.caja))}${D.multi ? ' · ' + esc(sucOf(t.sucursal).nombre) : ''}</td><td class="mono">${fdt(a.ts)}</td><td>${esc(a.por)}</td><td class="n">${money(a.contado)}</td><td class="n">${money(a.esperado)}</td><td class="n ${a.dif < 0 ? 'bad' : ''}">${a.dif < 0 ? '−' : a.dif > 0 ? '+' : ''}${money(Math.abs(a.dif))}</td></tr>`)).join('')}</tbody></table></div></div>` : ''}`;
@@ -3951,7 +3969,7 @@ const ACT = {
   inc: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it) it.qty++; renderGrid(); renderTicket(); },
   dec: t => { const it = S.cart.find(i => i.key === t.dataset.k); if (it && --it.qty <= 0) S.cart = S.cart.filter(i => i !== it); renderGrid(); renderTicket(); },
   cyc: t => cycleSize(t.dataset.k),
-  clear: () => { S.cart = []; S.cartTs = 0; S.nomC = ''; S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
+  clear: () => { S.cart = []; S.cartTs = 0; S.nomC = ''; S.exp = EXP_DEF(); S.desc = null; S.consumo = false; S.recibido = ''; renderGrid(); renderTicket(); toast('Comanda vaciada.'); },
   tipo: t => { S.tipo = t.dataset.v; if (S.tipo !== 'app') S.app = ''; renderTicket(); },
   appSel: t => { S.app = t.dataset.v; renderTicket(); },
   pago: t => { S.pago = t.dataset.v; S.recibido = ''; renderTicket(); },
@@ -4064,6 +4082,9 @@ document.addEventListener('input', e => {
   if (id === 'tkNit') S.cliente.nit = t.value;
   else if (id === 'tkNom') S.cliente.nombre = t.value;
   else if (id === 'tkNomC') S.nomC = t.value;
+  else if (id === 'exMonto') { (S.exp = S.exp || EXP_DEF()).monto = t.value; updateTotals(); }
+  else if (id === 'exTel') (S.exp = S.exp || EXP_DEF()).tel = t.value;
+  else if (id === 'exDir') (S.exp = S.exp || EXP_DEF()).dir = t.value;
   else if (id === 'tkPara') S.consumoPara = t.value;
   else if (id === 'tkMail') S.cliente.correo = t.value;
   else if (id === 'tkRec') { S.recibido = t.value.replace(',', '.'); updateTotals(); }
