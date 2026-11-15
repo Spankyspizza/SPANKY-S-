@@ -1664,6 +1664,7 @@ function cajaMenu() {
     const sug = ls.get('fondo.' + S.suc + '.' + S.puesto, '');
     body = `<div class="cajabox off"><b>Caja cerrada</b><span>Para cobrar hay que abrir la caja y registrar el fondo con que se inicia.</span></div>
       <label class="field"><span>Fondo inicial en efectivo (${esc(sym())})</span><input class="inp num" id="cjFondo" inputmode="decimal" style="font-size:20px;height:52px" value="${esc(sug)}" placeholder="Ej. 30000"></label>
+      <button class="ghost sm" data-act="cierreObs" style="justify-self:start">📝 Editar observaciones del último cierre</button>
       <div class="row-actions"><button class="ghost left" data-act="puestoElegir">Cambiar de caja</button><button class="ghost" data-act="m-cancel">Cerrar</button><button class="primary" data-act="cajaAbrir">Abrir ${cajaNom(S.puesto)}</button></div>`;
   } else {
     const facs = S.facturas.filter(f => f.turno === t.id); const R = resumenTurno(t, facs);
@@ -1692,6 +1693,40 @@ async function cajaAbrir() {
     ls.set('fondo.' + S.suc + '.' + caja, String(fondo));
     S.cajaSheet = false; closeModal(); toast(`${cajaNom(caja)} abierta con fondo de ${money(fondo)}.`);
   } catch (e) { console.warn(e); toast(e && e.code === 'ya' ? `${cajaNom(caja)} ya está abierta en otro equipo.` : e && e.code === 'permission-denied' ? 'Firebase no permitió abrir la caja: falta publicar la regla de "turnos" en Firestore → Reglas.' : 'No se pudo abrir la caja (' + (e?.code || 'error') + ').'); }
+}
+// Editar SOLO las observaciones del último cierre de esta caja (ej. se cerró con un error y hay que anotarlo).
+// Los montos, el conteo y la diferencia no se pueden cambiar. Queda el historial de quién cambió el texto y qué decía antes.
+async function cierreObs() {
+  const caja = S.puesto; if (!caja) return; S.cajaSheet = false;
+  let t;
+  try {
+    const q = await S.db.collection(sp('turnos')).where('caja', '==', caja).where('estado', '==', 'cerrado').get();
+    t = q.docs.map(d => d.data()).filter(x => x.cierre).sort((a, b) => (b.cierre.ts || 0) - (a.cierre.ts || 0))[0];
+  } catch (e) { console.warn(e); toast('No se pudo buscar el último cierre. Revise la conexión.'); return cajaMenu(); }
+  if (!t) { toast(`${cajaNom(caja)} todavía no tiene cierres.`); return cajaMenu(); }
+  const c = t.cierre; const sup = esSuper(); const dif = +c.dif || 0;
+  const hist = c.notaHist || [];
+  const res = await dialog(`<h2>Observaciones del último cierre<small>${esc(t.cajaNombre || cajaNom(caja))} · cerrada el ${fdt(c.ts)} por ${esc(c.por || '')}</small></h2>
+    ${sup ? `<dl class="tot" style="margin:0;opacity:.75"><dt>Esperado</dt><dd>${money(c.esperado)}</dd><dt>Contado</dt><dd>${money(c.contado)}</dd><dt>${dif < 0 ? 'Faltante' : dif > 0 ? 'Sobrante' : 'Diferencia'}</dt><dd class="${dif < 0 ? 'bad' : ''}">${money(Math.abs(dif))}</dd></dl>` : ''}
+    <p class="note" style="margin:0">🔒 Los montos del cierre no se pueden modificar. Solo se pueden cambiar las observaciones.</p>
+    <label class="field"><span>Observaciones</span><textarea class="inp" id="coN" rows="4" style="min-height:96px;resize:vertical;font:inherit" placeholder="Ej. Se cobró una venta con tarjeta pero fue SINPE.">${esc(c.nota || '')}</textarea></label>
+    ${hist.length ? `<p class="note" style="margin:0">Cambiadas antes: ${hist.map(h => esc(h.por) + ' el ' + fdt(h.ts)).join(' · ')}</p>` : ''}
+    ${sup ? '' : '<p class="note" style="margin:0">Para guardar se necesita el PIN del encargado.</p>'}
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Guardar observaciones</button></div>`, '',
+    () => { const v = $('#coN').value.trim(); if (v === (c.nota || '').trim()) { toast('No hay cambios en las observaciones.'); return false; } return {v}; });
+  if (!res) return cajaMenu();
+  if (!sup && !(await askPin('Autorizar cambio de observaciones del cierre'))) return cajaMenu();
+  try {
+    const ref = S.db.doc(sp('turnos/' + t.id));
+    await withLock(ref, async () => {
+      const g = await ref.get(); const d = g.data(); if (!g.exists || !d.cierre) throw {code: 'nocierre'};
+      const ci = d.cierre;
+      await ref.update({cierre: {...ci, nota: res.v, notaHist: [...(ci.notaHist || []), {ts: Date.now(), por: cajeroActual(), autoriza: sup ? cajeroActual() : 'PIN de supervisor', antes: ci.nota || ''}]}});
+    });
+    bit('Observaciones de cierre cambiadas', `${cajaNom(caja)} · cierre del ${fdt(c.ts)}: "${(c.nota || '').slice(0, 80)}" → "${res.v.slice(0, 80)}"`);
+    toast('Observaciones del cierre guardadas.');
+  } catch (e) { console.warn(e); toast('No se pudieron guardar las observaciones. Intente de nuevo.'); }
+  cajaMenu();
 }
 async function turnoUpdate(t, fn) {
   const ref = S.db.doc(sp('turnos/' + t.id));
@@ -1787,7 +1822,7 @@ function cierreHTML(t) {
     <div class="r tt"><span>${dif < 0 ? 'FALTANTE' : dif > 0 ? 'SOBRANTE' : 'DIFERENCIA'}</span><span>${money(Math.abs(dif))}</span></div>
     ${(t.movs || []).length ? '<hr>' + t.movs.map(m => `<div class="r"><span>${ftime(m.ts)} ${m.tipo === 'entrada' ? 'Entrada' : 'Salida'}: ${esc(m.motivo)}</span><span>${m.tipo === 'salida' ? '−' : ''}${money(m.monto)}</span></div>`).join('') : ''}
     ${(t.arqueos || []).length ? '<hr>' + t.arqueos.map(a => `<div class="r"><span>Arqueo ${ftime(a.ts)} (${esc(a.por)})</span><span>${a.dif < 0 ? '−' : a.dif > 0 ? '+' : ''}${money(Math.abs(a.dif))}</span></div>`).join('') : ''}
-    ${c.nota ? `<hr><div style="font-weight:600">OBSERVACIONES</div><div style="white-space:pre-wrap">${esc(c.nota)}</div>` : ''}<hr><div class="c">Firma cajero ____________________</div><div class="c" style="margin-top:14px">Firma supervisor ________________</div>`;
+    ${c.nota ? `<hr><div style="font-weight:600">OBSERVACIONES</div><div style="white-space:pre-wrap">${esc(c.nota)}</div>${(c.notaHist || []).length ? `<div class="mute" style="font-size:11px">Modificadas por ${esc(c.notaHist[c.notaHist.length - 1].por)} el ${fdt(c.notaHist[c.notaHist.length - 1].ts)}</div>` : ''}` : ''}<hr><div class="c">Firma cajero ____________________</div><div class="c" style="margin-top:14px">Firma supervisor ________________</div>`;
 }
 
 /* ---------------- recibo ---------------- */
@@ -4051,6 +4086,7 @@ const ACT = {
   cajaMov: t => cajaMov(t.dataset.v),
   cajaArqueo: () => cajaArqueo(),
   cajaCerrar: () => cajaCerrar(),
+  cierreObs: () => cierreObs(),
   cierrePrt: () => { if (S.lastCierre) printDoc(cierreHTML(S.lastCierre), false); },
   turnoVer: t => verTurno(t.dataset.id),
   salir: () => firebase.auth().signOut().then(() => location.reload()),
