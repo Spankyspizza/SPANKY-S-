@@ -325,6 +325,8 @@ tfoot td{font-weight:700;border-top:1px solid var(--line)}
   #printArea .mute{color:#000}
   #printArea hr{border-top-color:#000}
   #printArea .ksz{border-color:#000}
+  #printArea .ksz,#printArea .sinx{color:#000!important}
+  #printArea .sinx{text-decoration:underline}
 }
 
 /* ===== Marca SPANKY'S ===== */
@@ -3905,6 +3907,7 @@ function meMenu() {
   openModal(`<div class="sheet" style="max-width:420px" role="dialog" aria-modal="true"><h2>${esc(S.me.nombre)}<small>Usuario ${esc(S.me.usuario)} · ${esc(ROLES[S.me.rol]?.l || '')}${esDueno() ? '' : ' · ' + esc(sucAct().nombre)}</small></h2>
     ${esDueno() && S.sucursales.length > 1 ? `<div class="field"><span>Trabajar en la sucursal</span><div style="display:grid;gap:6px">${S.sucursales.map(x => `<button class="${x.id === S.suc ? 'primary' : 'ghost'}" data-act="sucGo" data-id="${esc(x.id)}" style="justify-content:space-between;display:flex"><span>${esc(x.nombre)}</span><span class="mono">${esc(x.id)}</span></button>`).join('')}</div></div>` : ''}
     ${S.me?.rol === 'cocina' ? '' : `<button class="ghost ${esTerminalImp() ? 'term-on' : ''}" data-act="termToggle" style="display:flex;justify-content:space-between;width:100%;text-align:left"><span>🖨 Este equipo es <b>terminal de impresión</b><br><small class="note">Recibe e imprime lo que se mande desde la computadora</small></span><b>${esTerminalImp() ? 'Sí' : 'No'}</b></button>`}
+    <div class="field" style="margin:0"><span>Papel de la impresora de este equipo</span><div class="seg" style="display:flex;gap:6px">${[80, 58].map(m => `<button class="${papelMM() === m ? 'primary' : 'ghost'}" data-act="papelSet" data-v="${m}" style="flex:1">${m} mm${m === 58 ? ' (terminal)' : ''}</button>`).join('')}</div></div>
     <div class="row-actions"><button class="ghost left" data-act="miClave">Cambiar mi contraseña</button><button class="danger" data-act="logout">Cerrar sesión</button><button class="ghost" data-act="m-cancel">Cerrar</button></div></div>`);
 }
 async function miClave() {
@@ -3974,7 +3977,16 @@ async function impSiguiente() {
     <div class="row-actions"><button class="ghost" data-act="m-cancel">Listo</button><button class="primary" data-act="impPrint" style="min-height:56px;font-size:18px;flex:1">Imprimir</button></div>`);
   S.impJob = null; S.impBusy = false; impSiguiente();
 }
-function printDoc(html, kit) { $('#printArea').innerHTML = `<div class="receipt ${kit ? 'kit' : ''}">${html}</div>`; setTimeout(() => window.print(), 50); }
+// Papel de la impresora de ESTE equipo (80 mm computadora / 58 mm terminal). Se guarda en el equipo.
+const papelMM = () => ls.get('papel', 80) === 58 ? 58 : 80;
+function printDoc(html, kit) {
+  const mm = papelMM(); let st = document.getElementById('pgStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
+  st.textContent = mm === 58
+    ? '@media print{@page{size:58mm auto;margin:1mm 1.5mm}#printArea .receipt{font-size:10px!important;line-height:1.35!important}#printArea .receipt.kit{font-size:11.5px!important}#printArea .kbig{font-size:26px!important}#printArea .receipt img{max-width:100%!important}}'
+    : '@media print{@page{size:80mm auto;margin:3mm}}';
+  $('#printArea').innerHTML = `<div class="receipt ${kit ? 'kit' : ''}">${html}</div>`; setTimeout(() => window.print(), 50);
+}
 const VIEWS = {venta: viewVenta, cocina: viewCocina, facturas: viewFacturas, inventario: viewInv, menu: viewMenu, reportes: viewRep, ajustes: viewAjustes};
 
 /* ---------------- modales ---------------- */
@@ -4164,6 +4176,7 @@ const ACT = {
   prtT: t => { const f = findF(t.dataset.n); if (f) enviarTerminal('tiquete', 'Comprobante ' + f.numero + (f.cliente?.nombre ? ' · ' + f.cliente.nombre : ''), receiptHTML(f), false); },
   prtkT: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) enviarTerminal('comanda', 'Comanda #' + k.corto + (k.cliente ? ' · ' + k.cliente : ''), kitchenHTML(k), true); },
   impPrint: () => { if (S.impJob) printDoc(S.impJob.html, S.impJob.kit); },
+  papelSet: t => { ls.set('papel', +t.dataset.v); toast('Papel de este equipo: ' + t.dataset.v + ' mm.'); meMenu(); },
   termToggle: () => { const on = !esTerminalImp(); ls.set('termImp.' + S.suc, on); if (on) { S.impVistos = new Set((S.impDoc?.cola || []).map(j => j.id)); impVisto(); } toast(on ? 'Listo: este equipo va a recibir lo que se mande a imprimir desde la computadora. Deje SPANKYS POS abierto.' : 'Este equipo ya no recibe impresiones.'); meMenu(); },
   prtk: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) printDoc(kitchenHTML(k), true); }
 };
