@@ -472,6 +472,8 @@ th{color:var(--brand)}
 .kcard em.kx,.kit-it em{display:block}
 .sinx{color:#C62828!important;font-weight:800!important;font-style:normal!important}
 .exbtn.sinb{border-color:#C62828;color:#C62828;margin-left:4px}
+.impbig{font:800 22px var(--f-ui);color:var(--brand);text-align:center;margin:2px 0 6px}
+.term-on{border-color:var(--brand)!important;background:#F6EEFF!important}
 .exbtn{display:inline-block;margin-top:4px;padding:3px 10px;border:1px dashed var(--brand);border-radius:999px;background:none;color:var(--brand);font-size:11.5px;font-weight:700;min-height:26px}
 .ajwrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:20px;align-items:start;max-width:1040px}
 .ajnav{display:grid;gap:6px;position:sticky;top:0}
@@ -1016,6 +1018,8 @@ function subSuc() {
   ok(refs.cnt.onSnapshot(s => { S.next = s.exists ? (s.data().next || 1) : 1; refresh('cnt'); }, onErr));
   S.puesto = ls.get('puesto.' + S.suc, ''); S.turnosAb = []; S.ordenes = [];
   if (esSuper()) ok(db.collection(sp('ordenes')).orderBy('n', 'desc').limit(200).onSnapshot(s => { S.ordenes = s.docs.map(d => d.data()); refresh('oc'); }, onErr));
+  S.impVistos = new Set(); S.impQ = []; S.impBusy = false;
+  ok(db.doc(sp('datos/impresion')).onSnapshot(s => impRecibir(s.exists ? s.data() : {}), onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('turnos')).where('estado', '==', 'abierto').onSnapshot(s => { S.turnosAb = s.docs.map(d => d.data()); refresh('caja'); }, onErr));
   if (S.me?.rol !== 'cocina') ok(db.collection(sp('facturas')).orderBy('ts', 'desc').limit(300).onSnapshot(s => { S.facturas = s.docs.map(d => d.data()); S.loaded.fact = true; refresh('fact'); }, onErr));
   ok(db.collection(sp('comandas')).where('estado', 'in', K_ACTIVOS).limit(200).onSnapshot(s => {
@@ -1621,7 +1625,8 @@ async function cobrar() {
     openModal(`<div class="sheet wide"><div class="pair">
         <div><div class="lbl" style="text-align:center;margin-bottom:8px">${esCI ? 'Consumo interno' : 'Comprobante del cliente'}</div><div class="receipt">${receiptHTML(f)}</div></div>
         <div><div class="lbl" style="text-align:center;margin-bottom:8px">Comanda de cocina · enviada</div><div class="receipt kit">${kitchenHTML(k)}</div></div></div>
-      <div class="row-actions"><button class="ghost left" data-act="prt" data-n="${esc(f.numero)}">Imprimir comprobante</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Imprimir comanda</button><button class="primary" data-act="close">Nueva venta</button></div></div>`);
+      <div class="row-actions"><button class="ghost left" data-act="prt" data-n="${esc(f.numero)}">Imprimir comprobante</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Imprimir comanda</button><button class="primary" data-act="close">Nueva venta</button></div>
+      <div class="row-actions" style="margin-top:6px"><button class="ghost sm" data-act="prtT" data-n="${esc(f.numero)}">📲 Comprobante a la terminal</button><button class="ghost sm" data-act="prtkT" data-n="${esc(f.numero)}">📲 Comanda a la terminal</button></div></div>`);
   } catch (e) {
     console.warn(e); S.busy = false; updateTotals();
     toast(e && e.code === 'busy' ? e.message : e && e.code === 'quota_exceeded' ? 'La base de datos está llena. Exporte y depure facturas antiguas.' : 'No se pudo registrar la venta. Revise la conexión e intente de nuevo.');
@@ -1963,7 +1968,7 @@ function renderFDet() {
   el.innerHTML = `<div class="receipt">${receiptHTML(f)}</div>
     ${f.estado === 'anulada' ? `<div class="voidbox"><b>Anulada el ${fdt(f.anulacion?.ts)}</b><span>Motivo: ${esc(f.anulacion?.motivo)}</span>${f.anulacion?.devolucion && f.anulacion.devolucion.medio !== 'no' ? `<span>Devolución: ${money(f.anulacion.devolucion.monto)} por ${esc(f.anulacion.devolucion.medio)}${f.anulacion.devolucion.salidaCaja ? ' (salida de la caja)' : ''}</span>` : ''}<span class="mute">Por ${esc(f.anulacion?.cajero || '')} · ${f.anulacion?.devuelto ? 'ingredientes devueltos al inventario' : 'ingredientes no devueltos (merma)'}</span></div>` : ''}
     ${feBox(f)}${f.tipoDoc === 'consumo' ? '' : `<div class="febox" id="fTraza"><div class="lbl">Tiempos del pedido</div><span class="note">Cargando…</span></div>`}
-    <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
+    <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="prtT" data-n="${esc(f.numero)}" title="Mandar el comprobante a la terminal">📲 Terminal</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
   if (f.tipoDoc !== 'consumo' && S.db) cargaTraza(f);
 }
 async function cargaTraza(f) {
@@ -3899,6 +3904,7 @@ function meMenu() {
   if (!S.me) return;
   openModal(`<div class="sheet" style="max-width:420px" role="dialog" aria-modal="true"><h2>${esc(S.me.nombre)}<small>Usuario ${esc(S.me.usuario)} · ${esc(ROLES[S.me.rol]?.l || '')}${esDueno() ? '' : ' · ' + esc(sucAct().nombre)}</small></h2>
     ${esDueno() && S.sucursales.length > 1 ? `<div class="field"><span>Trabajar en la sucursal</span><div style="display:grid;gap:6px">${S.sucursales.map(x => `<button class="${x.id === S.suc ? 'primary' : 'ghost'}" data-act="sucGo" data-id="${esc(x.id)}" style="justify-content:space-between;display:flex"><span>${esc(x.nombre)}</span><span class="mono">${esc(x.id)}</span></button>`).join('')}</div></div>` : ''}
+    ${S.me?.rol === 'cocina' ? '' : `<button class="ghost ${esTerminalImp() ? 'term-on' : ''}" data-act="termToggle" style="display:flex;justify-content:space-between;width:100%;text-align:left"><span>🖨 Este equipo es <b>terminal de impresión</b><br><small class="note">Recibe e imprime lo que se mande desde la computadora</small></span><b>${esTerminalImp() ? 'Sí' : 'No'}</b></button>`}
     <div class="row-actions"><button class="ghost left" data-act="miClave">Cambiar mi contraseña</button><button class="danger" data-act="logout">Cerrar sesión</button><button class="ghost" data-act="m-cancel">Cerrar</button></div></div>`);
 }
 async function miClave() {
@@ -3920,6 +3926,54 @@ async function miClave() {
 }
 
 function findF(n) { return (S.lastF && S.lastF.numero === n) ? S.lastF : S.facturas.find(x => x.numero === n); }
+/* ---------------- IMPRIMIR EN LA TERMINAL ----------------
+   La computadora manda el tiquete o la comanda a sucursales/<suc>/datos/impresion (cola de trabajos).
+   El equipo marcado como "terminal de impresión" (se marca en el círculo del usuario, queda guardado en ese equipo)
+   lo recibe al instante, suena y muestra el botón Imprimir: al tocarlo sale la ventana de impresión de Android. */
+const refImp = () => S.db.doc(sp('datos/impresion'));
+const esTerminalImp = () => ls.get('termImp.' + S.suc, false) === true;
+async function enviarTerminal(tipo, titulo, html, kit) {
+  try {
+    const job = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo, titulo, html, kit: !!kit, ts: Date.now(), de: cajeroActual(), estado: 'pendiente'};
+    await withLock(refImp(), async () => {
+      const g = await refImp().get(); const d = g.exists ? g.data() : {};
+      const cola = (d.cola || []).filter(j => Date.now() - j.ts < 2 * 3600e3).slice(-14);
+      await refImp().set({...d, cola: [...cola, job]});
+    });
+    const v = S.impDoc?.vista;
+    toast(v && Date.now() - v.ts < 15 * 60000 ? `${titulo}: enviado a la terminal.` : `${titulo}: enviado. Si no sale, revise que la terminal tenga SPANKYS POS abierto y marcado como terminal de impresión.`);
+  } catch (e) { console.warn(e); toast('No se pudo enviar a la terminal. Revise la conexión.'); }
+}
+function impRecibir(d) {
+  S.impDoc = d;
+  if (!esTerminalImp()) return;
+  const nuevos = (d.cola || []).filter(j => j.estado === 'pendiente' && Date.now() - j.ts < 30 * 60000 && !S.impVistos.has(j.id));
+  nuevos.forEach(j => { S.impVistos.add(j.id); S.impQ.push(j); });
+  if (nuevos.length) { beep(); impSiguiente(); }
+  const v = d.vista; if (!v || Date.now() - v.ts > 10 * 60000) impVisto();
+}
+async function impVisto() {
+  try { await refImp().set({vista: {ts: Date.now(), por: cajeroActual()}}, {merge: true}); } catch (e) { console.warn(e); }
+}
+async function impSiguiente() {
+  if (S.impBusy || !S.impQ.length) return;
+  S.impBusy = true; const j = S.impQ.shift();
+  try {
+    await withLock(refImp(), async () => {
+      const g = await refImp().get(); const d = g.exists ? g.data() : {};
+      const cola = d.cola || []; const x = cola.find(c => c.id === j.id);
+      if (!x || x.estado !== 'pendiente') throw {code: 'tomado'};
+      x.estado = 'recibido'; x.recibe = cajeroActual(); x.tsRecibe = Date.now();
+      await refImp().set({...d, cola, vista: {ts: Date.now(), por: cajeroActual()}});
+    });
+  } catch (e) { if (e && e.code === 'tomado') { S.impBusy = false; return impSiguiente(); } console.warn(e); }
+  S.impJob = j;
+  await dialog(`<h2>🖨 Para imprimir<small>Enviado desde la computadora por ${esc(j.de || '')} · ${ftime(j.ts)}</small></h2>
+    <div class="impbig">${esc(j.titulo)}</div>
+    <div class="receipt ${j.kit ? 'kit' : ''}" style="max-height:38vh;overflow:auto">${j.html}</div>
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Listo</button><button class="primary" data-act="impPrint" style="min-height:56px;font-size:18px;flex:1">Imprimir</button></div>`);
+  S.impJob = null; S.impBusy = false; impSiguiente();
+}
 function printDoc(html, kit) { $('#printArea').innerHTML = `<div class="receipt ${kit ? 'kit' : ''}">${html}</div>`; setTimeout(() => window.print(), 50); }
 const VIEWS = {venta: viewVenta, cocina: viewCocina, facturas: viewFacturas, inventario: viewInv, menu: viewMenu, reportes: viewRep, ajustes: viewAjustes};
 
@@ -4107,6 +4161,10 @@ const ACT = {
   logout: async () => { if (await confirmBox('Cerrar sesión', 'Para volver a entrar necesitará el usuario y la contraseña.', 'Cerrar sesión')) firebase.auth().signOut(); },
   cfgSave: () => { const c = parseConfig($('#cfgT').value); if (!c) { $('#cfgE').textContent = 'No encontré apiKey y projectId en lo que pegó. Copie el bloque completo.'; return; } ls.set('fbconfig', c); location.reload(); },
   prt: t => { const f = findF(t.dataset.n); if (f) printDoc(receiptHTML(f), false); },
+  prtT: t => { const f = findF(t.dataset.n); if (f) enviarTerminal('tiquete', 'Comprobante ' + f.numero + (f.cliente?.nombre ? ' · ' + f.cliente.nombre : ''), receiptHTML(f), false); },
+  prtkT: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) enviarTerminal('comanda', 'Comanda #' + k.corto + (k.cliente ? ' · ' + k.cliente : ''), kitchenHTML(k), true); },
+  impPrint: () => { if (S.impJob) printDoc(S.impJob.html, S.impJob.kit); },
+  termToggle: () => { const on = !esTerminalImp(); ls.set('termImp.' + S.suc, on); if (on) { S.impVistos = new Set((S.impDoc?.cola || []).map(j => j.id)); impVisto(); } toast(on ? 'Listo: este equipo va a recibir lo que se mande a imprimir desde la computadora. Deje SPANKYS POS abierto.' : 'Este equipo ya no recibe impresiones.'); meMenu(); },
   prtk: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) printDoc(kitchenHTML(k), true); }
 };
 document.addEventListener('click', e => {
