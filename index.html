@@ -1861,7 +1861,7 @@ function receiptText(f) {
   const c = s => { s = String(s); const p = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(p) + s; };
   const lr = (l, r) => { l = String(l); r = String(r); return l + ' '.repeat(Math.max(1, W - l.length - r.length)) + r; };
   const L = [c((b.nombre || '').toUpperCase())]; if (b.sucursal) L.push(c('Sucursal ' + b.sucursal)); if (b.nit) L.push(c('Ced. juridica ' + b.nit)); if (b.direccion) L.push(c(b.direccion)); if (b.web) L.push(c(b.web));
-  L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), f.cliente.nombre); if (f.entrega) L.push(lr('Tel.', f.entrega.tel), 'Dir: ' + f.entrega.dir); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
+  L.push('-'.repeat(W), c('No. ' + f.numero), lr(fdate(f.ts), ftime(f.ts)), ...(f.tipo ? [lr('Orden', tipoTxt(f.tipo, f.plataforma))] : []), f.cliente.nombre); if (f.entrega) L.push(lr('Tel.', f.entrega.tel), 'Dir: ' + f.entrega.dir); if (f.cliente.nit) L.push(lr('Cedula', f.cliente.nit)); L.push('-'.repeat(W));
   f.items.forEach(it => { if (it.extra) { L.push(lr('  + ' + it.nombre, money(it.total))); return; } L.push(it.nombre + (it.size !== 'U' ? ' ' + (SIZES[it.size]?.l || it.size) : '') + (it.promo ? ' (regalo)' : '')); L.push(lr('  ' + it.qty + ' x ' + money(it.precio), money(it.total))); if ((it.sin || []).length) L.push('  ' + sinTxt(it.sin)); });
   if (f.descuento) L.push('-'.repeat(W), lr('Antes de descuento', money(f.bruto)), lr('Descuento', '-' + money(f.descuento.monto)));
   L.push('-'.repeat(W), ...(conIVA(f) ? [lr('Subtotal', money(f.subtotal)), lr('IVA ' + f.ivaPct + '%', money(f.iva))] : []), ...(f.servicio ? [lr('Servicio 10%', money(f.servicio))] : []), lr('TOTAL', money(f.total)));
@@ -1890,7 +1890,7 @@ function kitchenHTML(k) {
     <hr><div class="c mute">Cajero: ${esc(k.cajero)}</div>`;
 }
 function kitchenText(k) {
-  const L = ['COMANDA COCINA  #' + k.corto, tipoTxt(k.tipo, k.plataforma).toUpperCase() + '  ' + ftime(k.ts), k.cliente, ...(k.dir ? ['Tel. ' + (k.tel || ''), 'Dir: ' + k.dir] : []), '-'.repeat(32)];
+  const L = ['COMANDA #' + k.corto, tipoTxt(k.tipo, k.plataforma).toUpperCase() + '  ' + ftime(k.ts), k.cliente, ...(k.dir ? ['Tel. ' + (k.tel || ''), 'Dir: ' + k.dir] : []), '-'.repeat(32)];
   k.items.forEach(i => { L.push(i.qty + 'x ' + (i.size !== 'U' ? '[' + i.size + '] ' : '') + i.nombre); (i.extras || []).forEach(e => L.push('   + ' + e)); if ((i.sin || []).length) L.push('   ' + sinTxt(i.sin)); if (i.nota) L.push('   -> ' + i.nota); });
   return L.join('\n');
 }
@@ -3935,9 +3935,9 @@ function findF(n) { return (S.lastF && S.lastF.numero === n) ? S.lastF : S.factu
    lo recibe al instante, suena y muestra el botón Imprimir: al tocarlo sale la ventana de impresión de Android. */
 const refImp = () => S.db.doc(sp('datos/impresion'));
 const esTerminalImp = () => ls.get('termImp.' + S.suc, false) === true;
-async function enviarTerminal(tipo, titulo, html, kit) {
+async function enviarTerminal(tipo, titulo, html, kit, texto) {
   try {
-    const job = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo, titulo, html, kit: !!kit, ts: Date.now(), de: cajeroActual(), estado: 'pendiente'};
+    const job = {id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo, titulo, html, kit: !!kit, ...(texto ? {texto} : {}), ts: Date.now(), de: cajeroActual(), estado: 'pendiente'};
     await withLock(refImp(), async () => {
       const g = await refImp().get(); const d = g.exists ? g.data() : {};
       const cola = (d.cola || []).filter(j => Date.now() - j.ts < 2 * 3600e3).slice(-14);
@@ -3979,8 +3979,43 @@ async function impSiguiente() {
 }
 // Papel de la impresora de ESTE equipo (80 mm computadora / 58 mm terminal). Se guarda en el equipo.
 const papelMM = () => ls.get('papel', 80) === 58 ? 58 : 80;
-function printDoc(html, kit) {
-  const mm = papelMM(); let st = document.getElementById('pgStyle');
+// En 58 mm el tiquete se dibuja como imagen del ancho exacto del rollo (384 puntos, 32 letras por línea).
+// Así llena el papel sin importar el tamaño de hoja que elija Android (A7, A8…), y la letra sale de tamaño normal.
+function tiqueteImgs(texto, kit) {
+  const W = 384, PAD = 6, cols = 32, FS = 21, LH = 27;
+  const lineas = [];
+  String(texto).split('\n').forEach((l, i) => {
+    const big = kit && i === 0;
+    if (l.length <= cols) { lineas.push({t: l, big}); return; }
+    let r = l; const ind = (l.match(/^\s*/) || [''])[0];
+    while (r.length > cols) { let k = r.lastIndexOf(' ', cols); if (k <= ind.length) k = cols; lineas.push({t: r.slice(0, k)}); r = ind + r.slice(k).trimStart(); }
+    if (r.trim()) lineas.push({t: r});
+  });
+  const altoDe = l => l.big ? 46 : LH;
+  const maxH = Math.floor(W * 1.35); const paginas = [[]]; let h = PAD;
+  lineas.forEach(l => { if (h + altoDe(l) > maxH - PAD) { paginas.push([]); h = PAD; } paginas[paginas.length - 1].push(l); h += altoDe(l); });
+  return paginas.map(pg => {
+    const c = document.createElement('canvas'); c.width = W; c.height = Math.max(40, pg.reduce((a, l) => a + altoDe(l), PAD * 2));
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, c.height); g.fillStyle = '#000'; g.textBaseline = 'top';
+    let y = PAD;
+    pg.forEach(l => {
+      if (l.big) { g.font = 'bold 34px monospace'; const tw = g.measureText(l.t.trim()).width; g.fillText(l.t.trim(), Math.max(0, (W - tw) / 2), y + 4); }
+      else { g.font = `bold ${FS}px monospace`; const cw = g.measureText('M').width; const esc = Math.min(1, (W - PAD * 2) / (cw * cols)); g.save(); g.scale(esc, 1); g.fillText(l.t, PAD / esc, y); g.restore(); }
+      y += altoDe(l);
+    });
+    return c.toDataURL('image/png');
+  });
+}
+function printDoc(html, kit, texto) {
+  const mm = papelMM();
+  if (mm === 58 && texto) {
+    let st = document.getElementById('pgStyle');
+    if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
+    st.textContent = '@media print{@page{margin:0}#printArea .r58{display:block;width:100%;height:auto;margin:0;break-after:page;page-break-after:always}#printArea .r58:last-child{break-after:auto;page-break-after:auto}}';
+    const imgs = tiqueteImgs(texto, kit);
+    $('#printArea').innerHTML = imgs.map(u => `<img class="r58" src="${u}" alt="">`).join('');
+    return setTimeout(() => window.print(), 250);
+  } let st = document.getElementById('pgStyle');
   if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
   st.textContent = mm === 58
     ? '@media print{@page{size:58mm auto;margin:1mm 1.5mm}#printArea .receipt{font-size:10px!important;line-height:1.35!important}#printArea .receipt.kit{font-size:11.5px!important}#printArea .kbig{font-size:26px!important}#printArea .receipt img{max-width:100%!important}}'
@@ -4172,13 +4207,13 @@ const ACT = {
   soporteToggle: () => soporteToggle(),
   logout: async () => { if (await confirmBox('Cerrar sesión', 'Para volver a entrar necesitará el usuario y la contraseña.', 'Cerrar sesión')) firebase.auth().signOut(); },
   cfgSave: () => { const c = parseConfig($('#cfgT').value); if (!c) { $('#cfgE').textContent = 'No encontré apiKey y projectId en lo que pegó. Copie el bloque completo.'; return; } ls.set('fbconfig', c); location.reload(); },
-  prt: t => { const f = findF(t.dataset.n); if (f) printDoc(receiptHTML(f), false); },
-  prtT: t => { const f = findF(t.dataset.n); if (f) enviarTerminal('tiquete', 'Comprobante ' + f.numero + (f.cliente?.nombre ? ' · ' + f.cliente.nombre : ''), receiptHTML(f), false); },
-  prtkT: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) enviarTerminal('comanda', 'Comanda #' + k.corto + (k.cliente ? ' · ' + k.cliente : ''), kitchenHTML(k), true); },
-  impPrint: () => { if (S.impJob) printDoc(S.impJob.html, S.impJob.kit); },
+  prt: t => { const f = findF(t.dataset.n); if (f) printDoc(receiptHTML(f), false, receiptText(f)); },
+  prtT: t => { const f = findF(t.dataset.n); if (f) enviarTerminal('tiquete', 'Comprobante ' + f.numero + (f.cliente?.nombre ? ' · ' + f.cliente.nombre : ''), receiptHTML(f), false, receiptText(f)); },
+  prtkT: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) enviarTerminal('comanda', 'Comanda #' + k.corto + (k.cliente ? ' · ' + k.cliente : ''), kitchenHTML(k), true, kitchenText(k)); },
+  impPrint: () => { if (S.impJob) printDoc(S.impJob.html, S.impJob.kit, S.impJob.texto); },
   papelSet: t => { ls.set('papel', +t.dataset.v); toast('Papel de este equipo: ' + t.dataset.v + ' mm.'); meMenu(); },
   termToggle: () => { const on = !esTerminalImp(); ls.set('termImp.' + S.suc, on); if (on) { S.impVistos = new Set((S.impDoc?.cola || []).map(j => j.id)); impVisto(); } toast(on ? 'Listo: este equipo va a recibir lo que se mande a imprimir desde la computadora. Deje SPANKYS POS abierto.' : 'Este equipo ya no recibe impresiones.'); meMenu(); },
-  prtk: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) printDoc(kitchenHTML(k), true); }
+  prtk: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) printDoc(kitchenHTML(k), true, kitchenText(k)); }
 };
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t || t.disabled) return;
