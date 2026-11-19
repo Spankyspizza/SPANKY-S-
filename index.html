@@ -4024,7 +4024,8 @@ function tiqueteImgs(texto, kit) {
     if (r.trim()) lineas.push({t: r});
   });
   const altoDe = l => l.logo ? l.h : l.big ? 46 : LH;
-  const maxH = Math.floor(W * 1.35); const paginas = [[]]; let h = PAD;
+  // Todo el tiquete en UNA sola página (la impresora de la terminal solo saca la primera página de cada trabajo).
+  const maxH = Infinity; const paginas = [[]]; let h = PAD;
   lineas.forEach(l => { if (h + altoDe(l) > maxH - PAD) { paginas.push([]); h = PAD; } paginas[paginas.length - 1].push(l); h += altoDe(l); });
   return paginas.map(pg => {
     const c = document.createElement('canvas'); c.width = W; c.height = Math.max(40, pg.reduce((a, l) => a + altoDe(l), PAD * 2));
@@ -4036,7 +4037,7 @@ function tiqueteImgs(texto, kit) {
       else { g.font = `bold ${FS}px monospace`; const cw = g.measureText('M').width; const esc = Math.min(1, (W - PAD * 2) / (cw * cols)); g.save(); g.scale(esc, 1); g.fillText(l.t, PAD / esc, y); g.restore(); }
       y += altoDe(l);
     });
-    return c.toDataURL('image/png');
+    return {u: c.toDataURL('image/png'), w: c.width, h: c.height};
   });
 }
 function printDoc(html, kit, texto) {
@@ -4044,9 +4045,11 @@ function printDoc(html, kit, texto) {
   if (mm === 58 && texto) {
     let st = document.getElementById('pgStyle');
     if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
-    st.textContent = '@media print{@page{margin:0}#printArea .r58{display:block;width:100%;height:auto;margin:0;break-after:page;page-break-after:always}#printArea .r58:last-child{break-after:auto;page-break-after:auto}}';
-    const imgs = tiqueteImgs(texto, kit);
-    $('#printArea').innerHTML = imgs.map(u => `<img class="r58" src="${u}" alt="">`).join('');
+    const imgs = tiqueteImgs(texto, kit); const im = imgs[0];
+    // La hoja mide exactamente lo que mide el tiquete: 58 mm de ancho y el largo que haga falta.
+    const alto = Math.ceil(58 * im.h / im.w) + 2;
+    st.textContent = `@media print{@page{size:58mm ${alto}mm;margin:0}html,body{width:58mm!important;margin:0!important}#printArea .r58{display:block;width:100%;height:auto;margin:0}}`;
+    $('#printArea').innerHTML = `<img class="r58" src="${im.u}" alt="">`;
     return setTimeout(() => window.print(), 250);
   } let st = document.getElementById('pgStyle');
   if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
