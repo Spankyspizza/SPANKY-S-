@@ -4073,12 +4073,15 @@ function tiqueteImgs(texto, kit) {
   const lineas = [];
   const logo = !kit && ls.get('logoTq', true) !== false ? logoTiquete() : null;
   if (logo) lineas.push({logo, h: logo.height + 14});
-  String(texto).split('\n').forEach((l, i) => {
-    const big = kit && i === 0;
-    if (l.length <= cols) { lineas.push({t: l, big}); return; }
-    let r = l; const ind = (l.match(/^\s*/) || [''])[0];
-    while (r.length > cols) { let k = r.lastIndexOf(' ', cols); if (k <= ind.length) k = cols; lineas.push({t: r.slice(0, k)}); r = ind + r.slice(k).trimStart(); }
-    if (r.trim()) lineas.push({t: r});
+  // En la comanda, el encabezado (todo lo que va antes de la primera línea de guiones) sale centrado.
+  const filas = String(texto).split('\n'); const sep = kit ? filas.findIndex(l => /^-{8,}$/.test(l.trim())) : -1;
+  filas.forEach((l, i) => {
+    const big = kit && i === 0; const cen = kit && i > 0 && i < sep;
+    if (cen) l = l.replace(/\s{2,}/g, ' · ').trim();
+    if (l.length <= cols) { lineas.push({t: l, big, cen}); return; }
+    let r = l; const ind = cen ? '' : (l.match(/^\s*/) || [''])[0];
+    while (r.length > cols) { let k = r.lastIndexOf(' ', cols); if (k <= ind.length) k = cols; lineas.push({t: r.slice(0, k), cen}); r = ind + r.slice(k).trimStart(); }
+    if (r.trim()) lineas.push({t: r, cen});
   });
   const altoDe = l => l.logo ? l.h : l.big ? 46 : LH;
   // Todo el tiquete en UNA sola página (la impresora de la terminal solo saca la primera página de cada trabajo).
@@ -4091,7 +4094,7 @@ function tiqueteImgs(texto, kit) {
     pg.forEach(l => {
       if (l.logo) { g.drawImage(l.logo, Math.round((W - l.logo.width) / 2), y + 4); y += altoDe(l); return; }
       if (l.big) { g.font = 'bold 34px monospace'; const tw = g.measureText(l.t.trim()).width; g.fillText(l.t.trim(), Math.max(0, (W - tw) / 2), y + 4); }
-      else { g.font = `bold ${FS}px monospace`; const cw = g.measureText('M').width; const esc = Math.min(1, (W - PAD * 2) / (cw * cols)); g.save(); g.scale(esc, 1); g.fillText(l.t, PAD / esc, y); g.restore(); }
+      else { g.font = `bold ${FS}px monospace`; const cw = g.measureText('M').width; const esc = Math.min(1, (W - PAD * 2) / (cw * cols)); g.save(); g.scale(esc, 1); const x = l.cen ? Math.max(PAD, (W - g.measureText(l.t).width * esc) / 2) : PAD; g.fillText(l.t, x / esc, y); g.restore(); }
       y += altoDe(l);
     });
     return {u: c.toDataURL('image/png'), w: c.width, h: c.height};
