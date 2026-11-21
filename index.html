@@ -4104,7 +4104,8 @@ function printDoc(html, kit, texto) {
     if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
     const imgs = tiqueteImgs(texto, kit); const im = imgs[0];
     // La hoja mide exactamente lo que mide el tiquete: 58 mm de ancho y el largo que haga falta.
-    const alto = Math.ceil(58 * im.h / im.w) + 2;
+    // Mínimo 80 mm de largo: si la hoja queda más ancha que alta (comandas cortas), Android la imprime horizontal.
+    const alto = Math.max(80, Math.ceil(58 * im.h / im.w) + 2);
     st.textContent = `@media print{@page{size:58mm ${alto}mm;margin:0}html,body{width:58mm!important;margin:0!important}#printArea .r58{display:block;width:100%;height:auto;margin:0}}`;
     $('#printArea').innerHTML = `<img class="r58" src="${im.u}" alt="">`;
     return setTimeout(() => window.print(), 250);
