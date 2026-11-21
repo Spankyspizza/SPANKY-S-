@@ -1971,8 +1971,65 @@ function renderFDet() {
   el.innerHTML = `<div class="receipt">${receiptHTML(f)}</div>
     ${f.estado === 'anulada' ? `<div class="voidbox"><b>Anulada el ${fdt(f.anulacion?.ts)}</b><span>Motivo: ${esc(f.anulacion?.motivo)}</span>${f.anulacion?.devolucion && f.anulacion.devolucion.medio !== 'no' ? `<span>Devolución: ${money(f.anulacion.devolucion.monto)} por ${esc(f.anulacion.devolucion.medio)}${f.anulacion.devolucion.salidaCaja ? ' (salida de la caja)' : ''}</span>` : ''}<span class="mute">Por ${esc(f.anulacion?.cajero || '')} · ${f.anulacion?.devuelto ? 'ingredientes devueltos al inventario' : 'ingredientes no devueltos (merma)'}</span></div>` : ''}
     ${feBox(f)}${f.tipoDoc === 'consumo' ? '' : `<div class="febox" id="fTraza"><div class="lbl">Tiempos del pedido</div><span class="note">Cargando…</span></div>`}
-    <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="prtT" data-n="${esc(f.numero)}" title="Mandar el comprobante a la terminal">📲 Terminal</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
+    ${(f.pagoHist || []).length ? `<div class="note" style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#FFF4E6">✏️ Forma de pago modificada: ${f.pagoHist.map(h => `${fdt(h.ts)} por ${esc(h.por)} — antes <b>${esc((h.antes?.pagos || []).map(x => PAGO_L[x.medio] || x.medio).join(' + ') || PAGO_L[h.antes?.pago] || '')}</b>, ahora <b>${esc((h.despues?.pagos || []).map(x => PAGO_L[x.medio] || x.medio).join(' + '))}</b>. Motivo: ${esc(h.motivo)}`).join('<br>')}</div>` : ''}
+    <div class="row-actions" style="margin-top:14px"><button class="ghost" data-act="prt" data-n="${esc(f.numero)}">Imprimir</button><button class="ghost" data-act="prtk" data-n="${esc(f.numero)}">Comanda</button><button class="ghost" data-act="prtT" data-n="${esc(f.numero)}" title="Mandar el comprobante a la terminal">📲 Terminal</button><button class="ghost" data-act="copyrc" data-n="${esc(f.numero)}">Copiar</button>${f.estado === 'emitida' && f.tipoDoc !== 'consumo' && f.pago !== 'consumo' ? `<button class="ghost" data-act="cambiarPago" data-n="${esc(f.numero)}">✏️ Modificar forma de pago</button>` : ''}${f.estado === 'emitida' || f.estado === 'consumo' ? `<button class="danger" data-act="anular" data-n="${esc(f.numero)}">Anular ${f.tipoDoc === 'consumo' ? 'consumo' : 'factura'}</button>` : ''}</div>`;
   if (f.tipoDoc !== 'consumo' && S.db) cargaTraza(f);
+}
+// Modificar SOLO la forma de pago de una venta (ej. se marcó Efectivo y fue SINPE). Pide PIN de supervisor
+// al cajero. Cambia lo que suma la caja y los reportes; productos, montos y cliente no se tocan.
+async function cambiarPago(numero) {
+  const f = findF(numero); if (!f || f.estado !== 'emitida' || f.pago === 'consumo') return;
+  const total = +f.total || 0; let antes = pagosDe(f);
+  const txt = arr => arr.map(x => (PAGO_L[x.medio] || x.medio) + ' ' + money(x.monto)).join(' + ');
+  S.cpMedio = f.pago === 'mixto' ? 'mixto' : f.pago;
+  const mx = {}; if (f.pago === 'mixto') antes.forEach(x => { if (x.medio !== 'efectivo') mx[x.medio] = x.monto; });
+  const tAb = S.turnosAb.find(t => t.id === f.turno);
+  const res = await dialog(`<h2>Modificar forma de pago<small>${esc(f.numero)} · ${esc(f.cliente?.nombre || '')} · total ${money(total)}</small></h2>
+    <p class="note" style="margin:0">Ahora: <b>${esc(txt(antes) || PAGO_L[f.pago] || f.pago)}</b>. Solo se cambia la forma de pago: productos, montos y cliente quedan igual.</p>
+    <div class="field" style="margin:0"><span>Nueva forma de pago</span><div class="seg" id="cpSeg" style="display:flex;flex-wrap:wrap;gap:6px">${PAGOS.map(([k, l]) => `<button class="${S.cpMedio === k ? 'primary' : 'ghost'}" aria-pressed="${S.cpMedio === k}" data-act="cpMedio" data-v="${k}" style="flex:1">${l}</button>`).join('')}</div></div>
+    <div id="cpMix" style="display:${S.cpMedio === 'mixto' ? 'grid' : 'none'};grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">${[['tarjeta', 'Tarjeta'], ['sinpe', 'SINPE'], ['transferencia', 'Transf.']].map(([k, l]) => `<label class="field" style="margin:0"><span>${l}</span><input class="inp num cpq" data-k="${k}" inputmode="decimal" value="${mx[k] ? esc(String(mx[k])) : ''}"></label>`).join('')}<span class="note" style="grid-column:1/-1">El resto se cuenta como efectivo.</span></div>
+    <label class="field" style="margin:0"><span>Motivo <b class="bad">*</b></span><input class="inp" id="cpMot" placeholder="Ej. El cliente pagó por SINPE y se marcó efectivo"></label>
+    ${tAb ? '' : '<p class="warn" style="margin:0;padding:8px 10px;border-radius:8px;background:#FDECEC">⚠️ La caja de esta venta ya está cerrada. El cierre no se recalcula: el cambio se anota solo en las observaciones de ese cierre.</p>'}
+    ${f.feSolicitada !== false && f.fe ? '<p class="note" style="margin:0">Es factura electrónica: el comprobante que ya está en Hacienda conserva la forma de pago original. El cambio aplica a la caja y a los reportes.</p>' : ''}
+    <div class="row-actions"><button class="ghost" data-act="m-cancel">Cancelar</button><button class="primary" data-act="m-ok">Guardar cambio</button></div>`, '',
+    () => {
+      const mot = $('#cpMot').value.trim(); if (mot.length < 4) { toast('Escriba el motivo del cambio.'); $('#cpMot').focus(); return false; }
+      let partes;
+      if (S.cpMedio === 'mixto') {
+        const otros = [...document.querySelectorAll('.cpq')].map(i => ({medio: i.dataset.k, monto: r2(Math.max(0, parseFloat(String(i.value).replace(',', '.')) || 0))})).filter(x => x.monto > 0);
+        const ef = r2(total - otros.reduce((a, x) => a + x.monto, 0));
+        if (ef < -0.004) { toast('Los montos pasan el total de la venta.'); return false; }
+        if (!otros.length) { toast('En pago mixto escriba al menos un monto que no sea efectivo.'); return false; }
+        partes = ef > 0.004 ? [{medio: 'efectivo', monto: ef}, ...otros] : otros;
+      } else partes = [{medio: S.cpMedio, monto: total}];
+      if (txt(partes) === txt(antes)) { toast('La forma de pago es la misma.'); return false; }
+      return {mot, partes, pago: S.cpMedio};
+    });
+  if (!res) return;
+  if (!esSuper() && !(await askPin('Autorizar cambio de forma de pago'))) return;
+  try {
+    const ref = S.db.doc(sp('facturas/' + numero));
+    const reg = {ts: Date.now(), por: cajeroActual(), autoriza: esSuper() ? cajeroActual() : 'PIN de supervisor', motivo: res.mot, antes: {pago: f.pago, pagos: antes}, despues: {pago: res.pago, pagos: res.partes}};
+    await withLock(ref, async () => {
+      const g = await ref.get(); const d = g.data(); if (!g.exists || d.estado !== 'emitida') throw {code: 'estado'};
+      antes = pagosDe(d); reg.antes = {pago: d.pago, pagos: antes};
+      const ef = res.partes.filter(x => x.medio === 'efectivo').reduce((a, x) => a + x.monto, 0);
+      await ref.update({pago: res.pago, pagos: res.partes, recibido: ef ? r2(ef) : r2(total), cambio: 0, pagoHist: [...(d.pagoHist || []), reg]});
+    });
+    if (!tAb && f.turno) {
+      try {
+        const tr = S.db.doc(sp('turnos/' + f.turno));
+        await withLock(tr, async () => {
+          const g = await tr.get(); const d = g.data(); if (!g.exists || !d.cierre) return;
+          const linea = `Cambio de forma de pago ${f.numero}: ${txt(antes)} → ${txt(res.partes)} (${res.mot}) · ${cajeroActual()} ${fdt(Date.now())}`;
+          const ci = d.cierre;
+          await tr.update({cierre: {...ci, nota: ((ci.nota || '').trim() ? ci.nota.trim() + '\n' : '') + linea, notaHist: [...(ci.notaHist || []), {ts: Date.now(), por: cajeroActual(), autoriza: reg.autoriza, antes: ci.nota || ''}]}});
+        });
+      } catch (e) { console.warn(e); }
+    }
+    bit('Forma de pago modificada', `${f.numero}: ${txt(antes)} → ${txt(res.partes)} · ${res.mot}`);
+    toast('Forma de pago actualizada.');
+  } catch (e) { console.warn(e); toast(e && e.code === 'estado' ? 'La venta ya no está vigente: no se puede cambiar.' : 'No se pudo guardar el cambio. Revise la conexión.'); }
 }
 async function cargaTraza(f) {
   S.trz = S.trz || {};
@@ -4244,6 +4301,8 @@ const ACT = {
   logout: async () => { if (await confirmBox('Cerrar sesión', 'Para volver a entrar necesitará el usuario y la contraseña.', 'Cerrar sesión')) firebase.auth().signOut(); },
   cfgSave: () => { const c = parseConfig($('#cfgT').value); if (!c) { $('#cfgE').textContent = 'No encontré apiKey y projectId en lo que pegó. Copie el bloque completo.'; return; } ls.set('fbconfig', c); location.reload(); },
   prt: t => { const f = findF(t.dataset.n); if (f) printDoc(receiptHTML(f), false, receiptText(f)); },
+  cambiarPago: t => cambiarPago(t.dataset.n),
+  cpMedio: t => { S.cpMedio = t.dataset.v; document.querySelectorAll('#cpSeg button').forEach(b => { b.className = b.dataset.v === S.cpMedio ? 'primary' : 'ghost'; b.setAttribute('aria-pressed', b.dataset.v === S.cpMedio); }); const m = $('#cpMix'); if (m) m.style.display = S.cpMedio === 'mixto' ? 'grid' : 'none'; },
   prtT: t => { const f = findF(t.dataset.n); if (f) enviarTerminal('tiquete', 'Comprobante ' + f.numero + (f.cliente?.nombre ? ' · ' + f.cliente.nombre : ''), receiptHTML(f), false, receiptText(f), f.numero); },
   prtkT: t => { const f = findF(t.dataset.n); const k = f ? kitchenOf(f) : S.comandas.find(c => c.numero === t.dataset.n); if (k) enviarTerminal('comanda', 'Comanda #' + k.corto + (k.cliente ? ' · ' + k.cliente : ''), kitchenHTML(k), true, kitchenText(k), f?.numero || k.numero); },
   impPrint: () => { const j = S.impJob; if (j) printDoc(j.html, j.kit, impTexto(j)); },
