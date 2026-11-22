@@ -4066,15 +4066,21 @@ function logoTiquete() {
     const i = (y * w + x) * 4; const L = Math.max(0, Math.min(255, (0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2] - 45) * 1.5));
     const v = L < (B[(y & 3) * 4 + (x & 3)] + 0.5) * 16 * 0.92 ? 0 : 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255;
   }
-  g.putImageData(d, 0, 0); LOGO_TQ = c; return c;
+  g.putImageData(d, 0, 0);
+  // Recorta el blanco que trae la imagen alrededor del logo, para que no sume espacio de más.
+  let y0 = h, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d.data[(y * w + x) * 4] === 0) { if (y < y0) y0 = y; if (y > y1) y1 = y; break; }
+  if (y1 > y0) { const k = document.createElement('canvas'); k.width = w; k.height = y1 - y0 + 1; k.getContext('2d').drawImage(c, 0, y0, w, k.height, 0, 0, w, k.height); LOGO_TQ = k; return k; }
+  LOGO_TQ = c; return c;
 }
 // 3 cm de papel en blanco al final para poder cortar sin perder información (384 puntos = 58 mm).
-const CORTE = Math.round(384 * 30 / 58);
+// 1 cm en blanco arriba y 1 cm abajo (384 puntos = 58 mm).
+const MARGEN = Math.round(384 * 10 / 58); const CORTE = MARGEN;
 function tiqueteImgs(texto, kit) {
   const W = 384, PAD = 6, cols = 32, FS = 21, LH = 27;
   const lineas = [];
   const logo = !kit && ls.get('logoTq', true) !== false ? logoTiquete() : null;
-  if (logo) lineas.push({logo, h: logo.height + 14});
+  if (logo) lineas.push({logo, h: logo.height + 10});
   // En la comanda, el encabezado (todo lo que va antes de la primera línea de guiones) sale centrado.
   const filas = String(texto).split('\n'); const sep = kit ? filas.findIndex(l => /^-{8,}$/.test(l.trim())) : -1;
   filas.forEach((l, i) => {
@@ -4090,11 +4096,11 @@ function tiqueteImgs(texto, kit) {
   const maxH = Infinity; const paginas = [[]]; let h = PAD;
   lineas.forEach(l => { if (h + altoDe(l) > maxH - PAD) { paginas.push([]); h = PAD; } paginas[paginas.length - 1].push(l); h += altoDe(l); });
   return paginas.map(pg => {
-    const c = document.createElement('canvas'); c.width = W; c.height = Math.max(40, pg.reduce((a, l) => a + altoDe(l), PAD * 2)) + CORTE;
+    const c = document.createElement('canvas'); c.width = W; c.height = MARGEN + pg.reduce((a, l) => a + altoDe(l), 0) + CORTE;
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, c.height); g.fillStyle = '#000'; g.textBaseline = 'top';
-    let y = PAD;
+    let y = MARGEN;
     pg.forEach(l => {
-      if (l.logo) { g.drawImage(l.logo, Math.round((W - l.logo.width) / 2), y + 4); y += altoDe(l); return; }
+      if (l.logo) { g.drawImage(l.logo, Math.round((W - l.logo.width) / 2), y); y += altoDe(l); return; }
       if (l.big) { g.font = 'bold 34px monospace'; const tw = g.measureText(l.t.trim()).width; g.fillText(l.t.trim(), Math.max(0, (W - tw) / 2), y + 4); }
       else { g.font = `bold ${FS}px monospace`; const cw = g.measureText('M').width; const esc = Math.min(1, (W - PAD * 2) / (cw * cols)); g.save(); g.scale(esc, 1); const x = l.cen ? Math.max(PAD, (W - g.measureText(l.t).width * esc) / 2) : PAD; g.fillText(l.t, x / esc, y); g.restore(); }
       y += altoDe(l);
@@ -4109,8 +4115,8 @@ function printDoc(html, kit, texto) {
     if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
     const imgs = tiqueteImgs(texto, kit); const im = imgs[0];
     // La hoja mide exactamente lo que mide el tiquete: 58 mm de ancho y el largo que haga falta.
-    // Mínimo 80 mm de largo: si la hoja queda más ancha que alta (comandas cortas), Android la imprime horizontal.
-    const alto = Math.max(80, Math.ceil(58 * im.h / im.w) + 2);
+    // Mínimo 62 mm de largo (un poco más que el ancho): si la hoja queda más ancha que alta, Android la imprime horizontal.
+    const alto = Math.max(62, Math.ceil(58 * im.h / im.w));
     st.textContent = `@media print{@page{size:58mm ${alto}mm;margin:0}html,body{width:58mm!important;margin:0!important}#printArea .r58{display:block;width:100%;height:auto;margin:0}}`;
     $('#printArea').innerHTML = `<img class="r58" src="${im.u}" alt="">`;
     return setTimeout(() => window.print(), 250);
@@ -4118,7 +4124,7 @@ function printDoc(html, kit, texto) {
   if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
   st.textContent = mm === 58
     ? '@media print{@page{size:58mm auto;margin:1mm 1.5mm}#printArea .receipt{font-size:10px!important;line-height:1.35!important}#printArea .receipt.kit{font-size:11.5px!important}#printArea .kbig{font-size:26px!important}#printArea .receipt img{max-width:100%!important}}'
-    : '@media print{@page{size:80mm auto;margin:3mm}#printArea .receipt{padding-bottom:30mm!important}}';
+    : '@media print{@page{size:80mm auto;margin:3mm}#printArea .receipt{padding-top:7mm!important;padding-bottom:7mm!important}}';
   $('#printArea').innerHTML = `<div class="receipt ${kit ? 'kit' : ''}">${html}</div>`; setTimeout(() => window.print(), 50);
 }
 const VIEWS = {venta: viewVenta, cocina: viewCocina, facturas: viewFacturas, inventario: viewInv, menu: viewMenu, reportes: viewRep, ajustes: viewAjustes};
