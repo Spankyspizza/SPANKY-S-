@@ -4068,6 +4068,8 @@ function logoTiquete() {
   }
   g.putImageData(d, 0, 0); LOGO_TQ = c; return c;
 }
+// 3 cm de papel en blanco al final para poder cortar sin perder información (384 puntos = 58 mm).
+const CORTE = Math.round(384 * 30 / 58);
 function tiqueteImgs(texto, kit) {
   const W = 384, PAD = 6, cols = 32, FS = 21, LH = 27;
   const lineas = [];
@@ -4088,7 +4090,7 @@ function tiqueteImgs(texto, kit) {
   const maxH = Infinity; const paginas = [[]]; let h = PAD;
   lineas.forEach(l => { if (h + altoDe(l) > maxH - PAD) { paginas.push([]); h = PAD; } paginas[paginas.length - 1].push(l); h += altoDe(l); });
   return paginas.map(pg => {
-    const c = document.createElement('canvas'); c.width = W; c.height = Math.max(40, pg.reduce((a, l) => a + altoDe(l), PAD * 2));
+    const c = document.createElement('canvas'); c.width = W; c.height = Math.max(40, pg.reduce((a, l) => a + altoDe(l), PAD * 2)) + CORTE;
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, c.height); g.fillStyle = '#000'; g.textBaseline = 'top';
     let y = PAD;
     pg.forEach(l => {
@@ -4116,7 +4118,7 @@ function printDoc(html, kit, texto) {
   if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
   st.textContent = mm === 58
     ? '@media print{@page{size:58mm auto;margin:1mm 1.5mm}#printArea .receipt{font-size:10px!important;line-height:1.35!important}#printArea .receipt.kit{font-size:11.5px!important}#printArea .kbig{font-size:26px!important}#printArea .receipt img{max-width:100%!important}}'
-    : '@media print{@page{size:80mm auto;margin:3mm}}';
+    : '@media print{@page{size:80mm auto;margin:3mm}#printArea .receipt{padding-bottom:30mm!important}}';
   $('#printArea').innerHTML = `<div class="receipt ${kit ? 'kit' : ''}">${html}</div>`; setTimeout(() => window.print(), 50);
 }
 const VIEWS = {venta: viewVenta, cocina: viewCocina, facturas: viewFacturas, inventario: viewInv, menu: viewMenu, reportes: viewRep, ajustes: viewAjustes};
